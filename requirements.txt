@@ -1,7 +1,6 @@
 streamlit
 pandas
 gspread
-google-auth
 google-generative-ai
 pypdf
 python-docx
