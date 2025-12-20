@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import google.generativeai as genai
 from datetime import datetime
 import time
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from docx import Document
 import uuid
 
