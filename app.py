@@ -148,7 +148,7 @@ def extract_text_from_file(uploaded_file):
 def get_gemini_response(prompt, context, subject, mode="tuteur"):
     api_key = st.secrets["gemini"]["api_key"]
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     if mode == "quiz":
         system_prompt = f"Tu es un professeur expert en {subject}. Génère un QCM difficile de 3 questions basé sur le contexte. Affiche la correction à la fin."
