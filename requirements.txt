@@ -6,3 +6,4 @@ google-generativeai
 pypdf
 python-docx
 streamlit-option-menu
+plotly
