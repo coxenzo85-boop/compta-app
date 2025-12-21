@@ -28,7 +28,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# INJECTION CSS (Design + Animations Hover + Hack Clickable)
+# INJECTION CSS (INTERACTIVITÉ TOTALE)
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -44,14 +44,40 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    /* Sidebar */
+    /* --- 1. SIDEBAR INTERACTIVE --- */
     [data-testid="stSidebar"] {{ background-color: {NAVY}; }}
     [data-testid="stSidebar"] h1 {{ color: white !important; }}
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
-
-    /* --- INTERACTIVITÉ GLOBALE (HOVER) --- */
     
-    /* KPI Cards */
+    /* Animation des liens du menu */
+    .nav-link {{
+        transition: all 0.3s ease !important;
+    }}
+    .nav-link:hover {{
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        transform: translateX(8px) !important; /* Décalage vers la droite */
+        color: {GOLD} !important;
+    }}
+
+    /* --- 2. TABS INTERACTIFS (IA, Notes, Tâches) --- */
+    button[data-baseweb="tab"] {{
+        transition: all 0.3s ease;
+        border-radius: 5px;
+        margin: 0 2px;
+    }}
+    button[data-baseweb="tab"]:hover {{
+        background-color: rgba(0, 128, 128, 0.1); /* Teal très clair */
+        color: {TEAL};
+        font-weight: bold;
+        transform: translateY(-2px);
+    }}
+    /* Onglet actif */
+    button[data-baseweb="tab"][aria-selected="true"] {{
+        background-color: {TEAL} !important;
+        color: white !important;
+    }}
+
+    /* --- 3. KPI CARDS (Hover) --- */
     .kpi-card {{
         background-color: white;
         padding: 20px;
@@ -67,50 +93,63 @@ st.markdown(f"""
         border-left-color: {TEAL};
     }}
 
-    /* Tâches (Containers) */
-    [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {{
-        transition: all 0.2s ease;
-    }}
-
-    /* --- COURSES GRID (CARTE CLIQUABLE) --- */
-    /* L'astuce : On superpose le bouton Streamlit transparent sur le HTML */
+    /* --- 4. CARTES DE COURS (Magie Cliquable) --- */
     
     .course-card-bg {{
         background-color: white;
         border-radius: 15px;
         padding: 20px;
-        height: 180px; /* Hauteur fixe pour uniformité */
+        height: 180px; 
         border: 1px solid #e2e8f0;
         border-left: 6px solid {NAVY};
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        position: relative;
+        position: relative; /* Important pour l'alignement */
         z-index: 0;
-        transition: all 0.3s ease;
     }}
-    
-    /* Effet Hover sur la carte cours */
-    .element-container:hover .course-card-bg {{
-        transform: translateY(-8px);
-        box-shadow: 0 12px 20px rgba(0,0,0,0.2);
-        border-left-color: {TEAL} !important;
-    }}
-    
-    .element-container:hover .course-card-bg h3 {{ color: {TEAL}; }}
-    .element-container:hover .course-card-bg .icon-box {{ background-color: {TEAL}; color: white; }}
 
-    /* Le bouton Streamlit invisible qui couvre tout */
+    /* LE BOUTON INVISIBLE MAIS RÉACTIF */
+    /* On cible le bouton qui a la classe 'click-cover' (injectée via le hack CSS plus bas) */
     div.stButton > button.click-cover {{
         position: absolute;
-        top: -200px; /* On remonte le bouton pour couvrir la carte */
+        top: -190px;
         left: 0;
         width: 100%;
         height: 200px;
-        opacity: 0; /* Invisible */
-        z-index: 2; /* Au-dessus du HTML */
+        opacity: 0; /* Invisible par défaut */
+        z-index: 2;
         cursor: pointer;
+        transition: all 0.3s ease;
+        background-color: {TEAL}; /* Couleur de fond au survol */
+        border: none;
     }}
 
-    /* --- FOCUS ROOM (TIMER) --- */
+    /* L'effet au survol du bouton invisible */
+    div.stButton > button.click-cover:hover {{
+        opacity: 0.05; /* On le rend légèrement visible (voile coloré) */
+        transform: scale(1.03); /* On fait grossir légèrement la zone */
+        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+    }}
+    
+    /* Quand on survole le bouton, on veut que le HTML en dessous semble réagir */
+    /* Note: En CSS pur, on ne peut pas affecter le frère précédent (la carte HTML) en survolant le frère suivant (le bouton).
+       C'est pourquoi on utilise l'opacity sur le bouton lui-même pour créer le voile coloré. */
+
+    /* Boutons classiques */
+    .stButton>button {{
+        background-color: {TEAL};
+        color: white;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        transition: all 0.3s;
+    }}
+    .stButton>button:not(.click-cover):hover {{
+        background-color: {NAVY};
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+    }}
+
+    /* TIMER */
     .timer-display {{
         font-size: 80px;
         font-weight: bold;
@@ -131,24 +170,6 @@ st.markdown(f"""
         color: {TEAL};
         text-transform: uppercase;
         letter-spacing: 2px;
-    }}
-
-    /* Onglets stylisés */
-    .stTabs [data-baseweb="tab-list"] {{
-        gap: 10px;
-        background-color: white;
-        padding: 10px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        height: 50px;
-        border-radius: 5px;
-        font-weight: 600;
-    }}
-    .stTabs [aria-selected="true"] {{
-        background-color: {TEAL} !important;
-        color: white !important;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -171,10 +192,9 @@ SUBJECTS_CONFIG = {
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
-# --- GESTION DE L'ÉTAT (NAVIGATION) ---
+# --- GESTION DE L'ÉTAT ---
 if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
-if 'pomodoro_state' not in st.session_state: st.session_state.pomodoro_state = {"running": False, "phase": "Setup", "time_left": 0}
 
 # --- CONNEXIONS & UTILS ---
 @st.cache_resource 
@@ -359,10 +379,10 @@ def dashboard_page(sh):
                     c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
         else: st.info("Rien à faire !")
 
-# --- PAGE 2: GRILLE DES COURS (CLIQUABLE) ---
+# --- PAGE 2: GRILLE DES COURS (CLIQUABLE + HOVER EFFECT) ---
 def courses_grid_page():
     st.markdown(f"### 📚 Mes Modules")
-    st.markdown("Sélectionne une matière pour accéder aux ressources.")
+    st.markdown("Accès rapide à tes cours.")
     st.write("")
 
     cols = st.columns(3)
@@ -372,7 +392,7 @@ def courses_grid_page():
         col = cols[index % 3]
         
         with col:
-            # HTML VISUEL (Arrière plan)
+            # 1. VISUEL (HTML)
             st.markdown(f"""
             <div class="course-card-bg">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
@@ -386,31 +406,29 @@ def courses_grid_page():
             </div>
             """, unsafe_allow_html=True)
             
-            # BOUTON INVISIBLE QUI COUVRE LE HTML (Hack CSS 'click-cover')
+            # 2. BOUTON (Invisible Overlay)
+            # On utilise une clé CSS unique pour cibler ce bouton spécifiquement
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
                 st.session_state.selected_subject = subject
                 st.rerun()
             
-            # Application de la classe CSS spéciale pour remonter ce bouton
-            st.markdown("""<script>
-            // Pas de JS possible facilement, on utilise le CSS .click-cover défini plus haut
-            </script>""", unsafe_allow_html=True)
-            
-            # On force la classe sur le bouton via un selecteur CSS astucieux dans le style global
+            # 3. CSS HACK pour transformer ce bouton en "Cover" (Couverture)
+            # On cible le n-ième bouton de la colonne
             st.markdown(f"""
             <style>
             div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{
-                border: none;
-                background: transparent;
-                color: transparent;
-                height: 180px;
-                margin-top: -190px; /* Remonte sur le HTML */
-                z-index: 10;
+                /* On applique la classe 'click-cover' manuellement via le style inline */
+                position: absolute !important;
+                top: -190px !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 200px !important;
+                opacity: 0 !important;
+                z-index: 2 !important;
             }}
             div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{
-                background: transparent;
-                border: none;
-                color: transparent;
+                opacity: 0.05 !important; /* Petit voile au survol */
+                background-color: {TEAL} !important;
             }}
             </style>
             """, unsafe_allow_html=True)
@@ -497,7 +515,7 @@ def subject_detail_page(sh, subject):
 # --- PAGE 4: FOCUS ROOM (POMODORO PRO) ---
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
-    st.markdown("Configure ta session et ne ferme pas cet onglet pour que le minuteur tourne.")
+    st.markdown("Configure ta session et ne ferme pas cet onglet.")
     
     c1, c2, c3, c4 = st.columns(4)
     work_min = c1.number_input("Travail (min)", 1, 60, 25)
@@ -522,12 +540,12 @@ def focus_room_page():
                     st.progress((work_min*60 - remaining) / (work_min*60))
                 time.sleep(1)
             
-            # PAUSE (Courte ou Longue)
-            is_long = (i + 1) % 4 == 0 and i != 0
-            break_time = long_break if is_long else short_break
-            label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
-            
-            if i < total_cycles - 1: # Pas de pause après le dernier cycle
+            # PAUSE
+            if i < total_cycles - 1:
+                is_long = (i + 1) % 4 == 0
+                break_time = long_break if is_long else short_break
+                label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
+                
                 for remaining in range(break_time * 60, -1, -1):
                     mins, secs = divmod(remaining, 60)
                     with placeholder.container():
