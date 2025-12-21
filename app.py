@@ -22,6 +22,7 @@ st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide
 if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False
+if 'pomodoro' not in st.session_state: st.session_state.pomodoro = None
 
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
@@ -57,10 +58,11 @@ st.markdown(f"""
     /* KPI Cards */
     .kpi-card {{
         background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border-left: 5px solid {NAVY};
+        padding: 25px; /* Un peu plus d'espace */
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        border-left: 8px solid {NAVY};
+        height: 100%;
     }}
 
     /* Boutons */
@@ -70,6 +72,11 @@ st.markdown(f"""
         border-radius: 8px;
         border: none;
         font-weight: bold;
+        transition: all 0.2s;
+    }}
+    .stButton>button:hover {{
+        background-color: {NAVY};
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }}
 
     /* Onglets */
@@ -119,8 +126,8 @@ DEFAULT_S2 = [
     "Anglais S2", "Projet Pro"
 ]
 
-# Config globale pour les icônes/couleurs (contient S1 et S2)
 SUBJECTS_CONFIG = {s: {"cat": "Cours", "color": NAVY, "icon": "book"} for s in DEFAULT_S1 + DEFAULT_S2}
+SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
 # --- CONNEXIONS GOOGLE ---
 @st.cache_resource 
@@ -191,17 +198,17 @@ def get_combined_events(ics_url, sh):
 # --- FONCTION KPI CARD ---
 def kpi_card(title, value, subtitle, color, icon):
     st.markdown(f"""
-    <div class="kpi-card" style="border-left: 5px solid {color};">
+    <div class="kpi-card" style="border-left: 8px solid {color};">
         <div style="display: flex; justify-content: space-between; align-items: start;">
             <div>
-                <p style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">{title}</p>
-                <h2 style="font-size: 2rem; font-weight: bold; color: {NAVY}; margin: 0;">{value}</h2>
+                <p style="font-size: 11px; font-weight: bold; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px;">{title}</p>
+                <h2 style="font-size: 2.2rem; font-weight: bold; color: {NAVY}; margin: 0;">{value}</h2>
             </div>
-            <div style="width: 40px; height: 40px; background-color: {color}20; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {color}; font-size: 1.2rem;">
+            <div style="width: 45px; height: 45px; background-color: {color}20; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {color}; font-size: 1.4rem;">
                 {icon}
             </div>
         </div>
-        <p style="font-size: 12px; color: {TEAL}; font-weight: bold; margin-top: 10px;">{subtitle}</p>
+        <p style="font-size: 13px; color: {TEAL}; font-weight: bold; margin-top: 15px;">{subtitle}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -250,6 +257,7 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
+    # HEADER
     st.markdown(f"### 👋 Dashboard Étudiant")
     st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
 
@@ -267,15 +275,24 @@ def dashboard_page(sh):
                 global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
                 s1_avg_display = f"{global_avg:.2f}/20"
 
-    c1, c2, c3 = st.columns(3)
+    # --- NOUVELLE DISPOSITION KPI (2 COLONNES) ---
+    c1, c2 = st.columns(2)
+    
+    # 1. BLOC MOYENNE
     with c1:
         kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
         if st.button("🧮 Ouvrir le Simulateur de Notes", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
-    with c2: kpi_card("Tâches", "Voir", "To-Do List", TEAL, "⚡")
-    with c3: kpi_card("Semaine", f"S{datetime.now().isocalendar()[1]}", "Calendrier", GOLD, "📅")
+    # 2. BLOC FOCUS ROOM (REMPLACE LES TACHES/SEMAINE)
+    with c2:
+        focus_txt = "Prêt à bosser ?"
+        if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
+        kpi_card("Focus Room", focus_txt, "Productivité Maximale", GOLD, "⏳")
+        if st.button("🚀 Accéder à la Focus Room", use_container_width=True):
+            st.session_state.current_view = "Focus Room"
+            st.rerun()
 
     if st.session_state.show_simulator and not df_sim.empty:
         st.write("")
@@ -296,12 +313,23 @@ def dashboard_page(sh):
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
             if not edited_df.empty:
-                # Le calcul gère automatiquement le coef 0
-                edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / (edited_df['Coef_CC'] + edited_df['Coef_Partiel'])
-                edited_df['Moyenne'] = edited_df['Moyenne'].fillna(0)
+                # Calcul robuste qui gère la division par zéro si les deux coefs sont nuls
+                total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
+                # On évite la division par 0 en remplaçant 0 par 1 temporairement (juste pour ne pas crash, la ligne sera filtrée après)
+                safe_total_coef = total_coef.replace(0, 1)
+                
+                edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
+                
+                # Si coef total est 0, moyenne est 0
+                edited_df.loc[total_coef == 0, 'Moyenne'] = 0
+                
                 st.write("**Résultats calculés :**")
                 st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
-                avg_sem = edited_df['Moyenne'].mean()
+                
+                # Moyenne Générale (en ignorant les matières à coef 0)
+                valid_avg = edited_df.loc[total_coef > 0, 'Moyenne']
+                avg_sem = valid_avg.mean() if not valid_avg.empty else 0
+                
                 st.metric(f"Moyenne Générale {key_suffix}", f"{avg_sem:.2f}/20")
                 return edited_df
 
