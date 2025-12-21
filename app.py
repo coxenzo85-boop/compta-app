@@ -293,6 +293,7 @@ def sidebar_menu():
         except:
             default_ix = 0
 
+        # --- FIX CSS POUR MENU (Coins Blancs) ---
         selected = option_menu(
             menu_title=None,
             options=options,
@@ -300,7 +301,8 @@ def sidebar_menu():
             menu_icon="cast",
             default_index=default_ix, 
             styles={
-                "container": {"padding": "0!important", "background-color": NAVY},
+                # AJOUT DE border-radius: 0 ICI 👇
+                "container": {"padding": "0!important", "background-color": NAVY, "border-radius": "0"}, 
                 "icon": {"color": "#94a3b8", "font-size": "14px"}, 
                 "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "color": "#e2e8f0"},
                 "nav-link-selected": {"background-color": TEAL, "color": "white", "font-weight": "bold"},
