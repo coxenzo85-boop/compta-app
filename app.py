@@ -28,7 +28,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# INJECTION CSS (Design + Animations Hover)
+# INJECTION CSS (Design + Animations Hover + Hack Clickable)
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -49,6 +49,8 @@ st.markdown(f"""
     [data-testid="stSidebar"] h1 {{ color: white !important; }}
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
 
+    /* --- INTERACTIVITÉ GLOBALE (HOVER) --- */
+    
     /* KPI Cards */
     .kpi-card {{
         background-color: white;
@@ -56,57 +58,82 @@ st.markdown(f"""
         border-radius: 12px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         border-left: 5px solid {NAVY};
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        transition: all 0.3s ease;
+        cursor: default;
     }}
     .kpi-card:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        transform: translateY(-5px) scale(1.02);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        border-left-color: {TEAL};
     }}
+
+    /* Tâches (Containers) */
+    [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {{
+        transition: all 0.2s ease;
+    }}
+
+    /* --- COURSES GRID (CARTE CLIQUABLE) --- */
+    /* L'astuce : On superpose le bouton Streamlit transparent sur le HTML */
     
-    /* Course Cards (Grille) */
-    .course-card-container {{
+    .course-card-bg {{
         background-color: white;
         border-radius: 15px;
         padding: 20px;
-        height: 100%;
+        height: 180px; /* Hauteur fixe pour uniformité */
         border: 1px solid #e2e8f0;
         border-left: 6px solid {NAVY};
-        transition: all 0.3s ease;
-        cursor: pointer;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         position: relative;
+        z-index: 0;
+        transition: all 0.3s ease;
     }}
     
-    /* Effet Hover sur les cartes de cours */
-    .course-card-container:hover {{
+    /* Effet Hover sur la carte cours */
+    .element-container:hover .course-card-bg {{
         transform: translateY(-8px);
-        box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 12px 20px rgba(0,0,0,0.2);
         border-left-color: {TEAL} !important;
     }}
     
-    .course-card-container:hover h3 {{
-        color: {TEAL} !important;
-    }}
-    
-    .course-card-container:hover .icon-box {{
-        background-color: {TEAL} !important;
-        color: white !important;
+    .element-container:hover .course-card-bg h3 {{ color: {TEAL}; }}
+    .element-container:hover .course-card-bg .icon-box {{ background-color: {TEAL}; color: white; }}
+
+    /* Le bouton Streamlit invisible qui couvre tout */
+    div.stButton > button.click-cover {{
+        position: absolute;
+        top: -200px; /* On remonte le bouton pour couvrir la carte */
+        left: 0;
+        width: 100%;
+        height: 200px;
+        opacity: 0; /* Invisible */
+        z-index: 2; /* Au-dessus du HTML */
+        cursor: pointer;
     }}
 
-    /* Boutons */
-    .stButton>button {{
-        background-color: {TEAL};
-        color: white;
-        border-radius: 8px;
-        border: none;
+    /* --- FOCUS ROOM (TIMER) --- */
+    .timer-display {{
+        font-size: 80px;
         font-weight: bold;
-        transition: all 0.3s;
+        color: {NAVY};
+        text-align: center;
+        font-family: 'Courier New', monospace;
+        background-color: white;
+        padding: 20px;
+        border-radius: 20px;
+        border: 4px solid {GOLD};
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        margin: 20px 0;
     }}
-    .stButton>button:hover {{
-        background-color: {NAVY};
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    .timer-label {{
+        text-align: center; 
+        font-size: 24px; 
+        font-weight: bold; 
+        color: {TEAL};
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }}
 
-    /* Onglets */
+    /* Onglets stylisés */
     .stTabs [data-baseweb="tab-list"] {{
         gap: 10px;
         background-color: white;
@@ -145,10 +172,9 @@ SUBJECTS_CONFIG = {
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
 # --- GESTION DE L'ÉTAT (NAVIGATION) ---
-if 'current_view' not in st.session_state:
-    st.session_state.current_view = 'Dashboard'
-if 'selected_subject' not in st.session_state:
-    st.session_state.selected_subject = None
+if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
+if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
+if 'pomodoro_state' not in st.session_state: st.session_state.pomodoro_state = {"running": False, "phase": "Setup", "time_left": 0}
 
 # --- CONNEXIONS & UTILS ---
 @st.cache_resource 
@@ -229,17 +255,16 @@ def kpi_card(title, value, subtitle, color, icon):
     </div>
     """, unsafe_allow_html=True)
 
-# --- NAVIGATION SIDEBAR (SIMPLIFIÉE) ---
+# --- NAVIGATION SIDEBAR ---
 def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
         
-        # Menu simplifié : Seulement 2 options
         selected = option_menu(
             menu_title=None,
-            options=["Dashboard", "Mes Cours"],
-            icons=["speedometer2", "grid-3x3-gap"],
+            options=["Dashboard", "Mes Cours", "Focus Room"],
+            icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -249,20 +274,6 @@ def sidebar_menu():
                 "nav-link-selected": {"background-color": TEAL, "color": "white", "font-weight": "bold"},
             }
         )
-        
-        st.markdown("---")
-        st.markdown(f"<p style='text-align:center; color:{GOLD}; font-size:12px; font-weight:bold;'>FOCUS ZONE</p>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        if c1.button("▶ 25m"): st.session_state.pomodoro = time.time()
-        if c2.button("⏹ Stop"): st.session_state.pomodoro = None
-        
-        if st.session_state.get("pomodoro"):
-            elapsed = time.time() - st.session_state.pomodoro
-            left = 25*60 - elapsed
-            if left > 0:
-                mins, secs = divmod(left, 60)
-                st.markdown(f"<h1 style='text-align:center; color:white;'>{int(mins):02}:{int(secs):02}</h1>", unsafe_allow_html=True)
-
     return selected
 
 # --- PAGE 1: DASHBOARD ---
@@ -348,44 +359,64 @@ def dashboard_page(sh):
                     c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
         else: st.info("Rien à faire !")
 
-# --- PAGE 2: GRILLE DES COURS (NOUVEAU) ---
+# --- PAGE 2: GRILLE DES COURS (CLIQUABLE) ---
 def courses_grid_page():
     st.markdown(f"### 📚 Mes Modules")
-    st.markdown("Sélectionne une matière pour accéder aux ressources, notes et IA.")
+    st.markdown("Sélectionne une matière pour accéder aux ressources.")
     st.write("")
 
-    # Création de la grille (3 colonnes)
     cols = st.columns(3)
     
     for index, subject in enumerate(SUBJECTS):
         conf = SUBJECTS_CONFIG[subject]
-        col = cols[index % 3] # Distribution dans les colonnes
+        col = cols[index % 3]
         
         with col:
-            # HTML Card Visuel (Non cliquable directement, c'est le bouton en dessous qui fait l'action)
+            # HTML VISUEL (Arrière plan)
             st.markdown(f"""
-            <div class="course-card-container">
+            <div class="course-card-bg">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <span style="background-color: #f1f5f9; color: {NAVY}; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">{conf['cat']}</span>
                     <div class="icon-box" style="width:30px; height:30px; border-radius:50%; background-color: {CLOUD}; display:flex; align-items:center; justify-content:center; color: {NAVY}; transition: all 0.3s ease;">
                          <i class="bi bi-{conf.get('icon', 'book')}"></i>
                     </div>
                 </div>
-                <h3 style="margin-top: 15px; font-size: 18px; margin-bottom: 5px; color: {NAVY}; transition: color 0.3s ease;">{subject}</h3>
+                <h3 style="margin-top: 25px; font-size: 18px; margin-bottom: 5px; color: {NAVY};">{subject}</h3>
                 <div style="height: 4px; width: 40px; background-color: {conf['color']}; border-radius: 2px;"></div>
             </div>
             """, unsafe_allow_html=True)
             
-            # Le bouton invisible qui couvre la carte (hack pour l'UX) ou bouton "Ouvrir"
-            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
+            # BOUTON INVISIBLE QUI COUVRE LE HTML (Hack CSS 'click-cover')
+            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
                 st.session_state.selected_subject = subject
                 st.rerun()
             
-            st.write("") # Espacement
+            # Application de la classe CSS spéciale pour remonter ce bouton
+            st.markdown("""<script>
+            // Pas de JS possible facilement, on utilise le CSS .click-cover défini plus haut
+            </script>""", unsafe_allow_html=True)
+            
+            # On force la classe sur le bouton via un selecteur CSS astucieux dans le style global
+            st.markdown(f"""
+            <style>
+            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{
+                border: none;
+                background: transparent;
+                color: transparent;
+                height: 180px;
+                margin-top: -190px; /* Remonte sur le HTML */
+                z-index: 10;
+            }}
+            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{
+                background: transparent;
+                border: none;
+                color: transparent;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
 
 # --- PAGE 3: DÉTAIL MATIÈRE ---
 def subject_detail_page(sh, subject):
-    # Bouton retour
     if st.button("← Retour à la grille"):
         st.session_state.selected_subject = None
         st.rerun()
@@ -463,28 +494,63 @@ def subject_detail_page(sh, subject):
                     d_show = f"📅 {r['Due_Date']}" if r["Due_Date"] else ""
                     c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
+# --- PAGE 4: FOCUS ROOM (POMODORO PRO) ---
+def focus_room_page():
+    st.markdown(f"### ⏳ Focus Room")
+    st.markdown("Configure ta session et ne ferme pas cet onglet pour que le minuteur tourne.")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    work_min = c1.number_input("Travail (min)", 1, 60, 25)
+    short_break = c2.number_input("Pause courte", 1, 15, 5)
+    long_break = c3.number_input("Pause longue", 5, 30, 15)
+    cycles = c4.number_input("Cycles", 1, 10, 4)
+
+    col_center, _ = st.columns([1, 2])
+    start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
+
+    placeholder = st.empty()
+
+    if start_btn:
+        total_cycles = cycles
+        for i in range(total_cycles):
+            # TRAVAIL
+            for remaining in range(work_min * 60, -1, -1):
+                mins, secs = divmod(remaining, 60)
+                with placeholder.container():
+                    st.markdown(f"<p class='timer-label'>💻 CYCLE {i+1}/{total_cycles} • FOCUS</p>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+                    st.progress((work_min*60 - remaining) / (work_min*60))
+                time.sleep(1)
+            
+            # PAUSE (Courte ou Longue)
+            is_long = (i + 1) % 4 == 0 and i != 0
+            break_time = long_break if is_long else short_break
+            label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
+            
+            if i < total_cycles - 1: # Pas de pause après le dernier cycle
+                for remaining in range(break_time * 60, -1, -1):
+                    mins, secs = divmod(remaining, 60)
+                    with placeholder.container():
+                        st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+                    time.sleep(1)
+        
+        st.balloons()
+        st.success("Session terminée ! Bravo 🎉")
 
 # --- MAIN LOGIC ---
 if __name__ == "__main__":
     sh = get_db_connection()
-    
-    # 1. Gestion de la Navigation Sidebar
     selected_page = sidebar_menu()
     
-    # Réinitialisation si changement de menu principal
     if selected_page != st.session_state.current_view:
         st.session_state.current_view = selected_page
-        st.session_state.selected_subject = None # On ferme le cours si on change de menu
+        st.session_state.selected_subject = None
         st.rerun()
 
-    # 2. Affichage conditionnel
-    if st.session_state.current_view == "Dashboard":
-        dashboard_page(sh)
-        
+    if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
-        # Si un sujet est sélectionné, on affiche sa page de détail
-        if st.session_state.selected_subject:
-            subject_detail_page(sh, st.session_state.selected_subject)
-        # Sinon, on affiche la grille
-        else:
-            courses_grid_page()
+        if st.session_state.selected_subject: subject_detail_page(sh, st.session_state.selected_subject)
+        else: courses_grid_page()
+    elif st.session_state.current_view == "Focus Room":
+        focus_room_page()
