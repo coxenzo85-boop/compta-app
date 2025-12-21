@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import google.generativeai as genai
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time as dt_time
 import time
 from pypdf import PdfReader
 from docx import Document
@@ -19,14 +19,15 @@ from streamlit_calendar import calendar
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
 # 🔗 TON LIEN EMPLOI DU TEMPS (ICS)
-# Remplace ce lien par celui de ton ENT (Moodle > Calendrier > Exporter > URL)
+# Remplace ce lien par le tien (Moodle/ENT > Export Agenda)
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228" 
 
-# PALETTE DE COULEURS DU DESIGN
+# PALETTE DE COULEURS
 NAVY = "#1A2C42"
 TEAL = "#008080"
 GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
+ORANGE_REV = "#ea580c" # Couleur pour les révisions
 
 # INJECTION CSS
 st.markdown(f"""
@@ -128,35 +129,46 @@ def get_db_connection():
     except Exception as e:
         return None
 
-# --- CALENDAR UTILS ---
-@st.cache_data(ttl=3600) # Mise à jour toutes les heures max pour ne pas ralentir
-def fetch_ics_events(ics_url):
-    events_list = []
+# --- CALENDAR ENGINE (FUSION ICS + SHEET) ---
+def fetch_all_events(ics_url, sh):
+    all_events = []
+    
+    # 1. Récupération ICS (Cours officiels)
     try:
         response = requests.get(ics_url)
-        response.raise_for_status()
-        cal = Calendar.from_ical(response.content)
-        
-        for component in cal.walk('vevent'):
-            # Extraction sécurisée des dates
-            start = component.get('dtstart').dt
-            end = component.get('dtend').dt
-            summary = str(component.get('summary'))
+        if response.status_code == 200:
+            cal = Calendar.from_ical(response.content)
+            for component in cal.walk('vevent'):
+                start = component.get('dtstart').dt
+                end = component.get('dtend').dt
+                summary = str(component.get('summary'))
+                all_events.append({
+                    "title": summary,
+                    "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
+                    "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+                    "backgroundColor": TEAL, # Couleur Cours
+                    "borderColor": NAVY
+                })
+    except:
+        pass # Si l'ICS plante, on continue quand même
+
+    # 2. Récupération Google Sheet (Révisions Perso)
+    if sh:
+        try:
+            ws_ev = sh.worksheet("Events")
+            rows = ws_ev.get_all_records()
+            for r in rows:
+                all_events.append({
+                    "title": f"📚 {r['Title']}", # Ajout d'un émoji livre
+                    "start": r['Start'],
+                    "end": r['End'],
+                    "backgroundColor": ORANGE_REV, # Couleur Révisions
+                    "borderColor": GOLD
+                })
+        except:
+            pass # Si la feuille "Events" n'existe pas encore
             
-            # Formatage pour streamlit-calendar
-            events_list.append({
-                "title": summary,
-                "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
-                "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
-                "backgroundColor": TEAL,
-                "borderColor": NAVY
-            })
-    except Exception as e:
-        print(f"Erreur ICS: {e}")
-        # Événement factice en cas d'erreur pour ne pas casser l'interface
-        events_list.append({"title": "Erreur Synchro EDT", "start": datetime.now().isoformat(), "end": (datetime.now()+timedelta(hours=1)).isoformat(), "backgroundColor": "#ef4444"})
-        
-    return events_list
+    return all_events
 
 # --- IA LOGIC ---
 def extract_text(files):
@@ -272,36 +284,52 @@ def dashboard_page(sh):
     st.write("")
     st.write("")
 
-    # --- SECTION PRINCIPALE ---
     c_left, c_right = st.columns([2, 1])
 
-    # 1. EMPLOI DU TEMPS (Remplacement du diagramme)
+    # --- PARTIE CALENDRIER ---
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
         
-        # Récupération des événements
-        events = fetch_ics_events(ICS_CALENDAR_URL)
+        # 1. Chargement des événements (ICS + Perso)
+        events = fetch_all_events(ICS_CALENDAR_URL, sh)
         
-        # Options du calendrier (Vue Semaine)
         calendar_options = {
-            "headerToolbar": {
-                "left": "today prev,next",
-                "center": "title",
-                "right": "timeGridWeek,dayGridMonth,listWeek"
-            },
+            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth,listWeek"},
             "initialView": "timeGridWeek",
             "slotMinTime": "08:00:00",
-            "slotMaxTime": "20:00:00",
-            "height": "400px",
+            "slotMaxTime": "21:00:00",
+            "height": "500px",
         }
         
-        # Affichage
-        calendar(events=events, options=calendar_options, custom_css="""
-            .fc-event { border-radius: 4px; font-size: 10px; }
-            .fc-toolbar-title { font-size: 14px !important; }
-        """)
+        calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
+        
+        # 2. Formulaire d'ajout rapide (Expander)
+        with st.expander("➕ Ajouter une session de révision (Perso)"):
+            if sh:
+                with st.form("add_event"):
+                    ev_title = st.text_input("Matière / Titre")
+                    c_d, c_h1, c_h2 = st.columns(3)
+                    ev_date = c_d.date_input("Date", date.today())
+                    ev_start = c_h1.time_input("Début", dt_time(18, 0))
+                    ev_end = c_h2.time_input("Fin", dt_time(19, 0))
+                    
+                    if st.form_submit_button("Ajouter au calendrier"):
+                        try:
+                            # Construction des dates format ISO
+                            start_iso = datetime.combine(ev_date, ev_start).isoformat()
+                            end_iso = datetime.combine(ev_date, ev_end).isoformat()
+                            
+                            ws_ev = sh.worksheet("Events")
+                            ws_ev.append_row([str(uuid.uuid4())[:8], ev_title, start_iso, end_iso, "Revision"])
+                            st.success("Ajouté ! Rafraîchis pour voir.")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur (as-tu créé l'onglet 'Events' ?) : {e}")
+            else:
+                st.warning("Connexion BDD inactive.")
 
-    # 2. TO-DO LIST
+    # --- PARTIE TO-DO ---
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh and urgent_tasks > 0:
@@ -357,7 +385,7 @@ def subject_page(sh, subject):
                 st.markdown(resp)
             st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
 
-    # TAB 2: NOTES (MÉTHODE GPS / LIGNE EXACTE)
+    # TAB 2: NOTES
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
@@ -394,7 +422,6 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                                # BOUTON SUPPRIMER
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
                                         row_num = int(row['real_row_index'])
