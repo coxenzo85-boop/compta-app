@@ -50,7 +50,7 @@ NOTEBOOK_LINKS = {
 }
 
 # ==============================================================================
-# 2. FONCTIONS BACKEND (GOOGLE, DATA, TIMER)
+# 2. FONCTIONS BACKEND
 # ==============================================================================
 
 @st.cache_resource 
@@ -105,6 +105,9 @@ def get_ics_events_cached(url):
     except: pass
     return events
 
+def get_combined_events(ics_url, sh):
+    return get_ics_events_cached(ics_url)
+
 def save_to_history(sh, action, subject, value):
     try: sh.worksheet("History").append_row([str(date.today()), action, subject, value])
     except: pass
@@ -132,7 +135,6 @@ def check_timer(sh):
             if sh: save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
             st.toast("Session terminée ! 🎉", icon="✅")
 
-# --- CALCULATEUR MOYENNE ---
 def load_simulator_data(sh):
     try:
         ws = sh.worksheet("Simulateur")
@@ -156,40 +158,25 @@ def save_simulator_data(sh, df):
     except Exception as e: st.error(f"Erreur sauvegarde: {e}")
 
 # ==============================================================================
-# 3. PAGES (DESIGN PRO)
+# 3. PAGES
 # ==============================================================================
 
 def dashboard_page(sh):
-    # CSS AVANCÉ POUR DASHBOARD
+    # CSS
     st.markdown(f"""
     <style>
-    /* Cartes Custom */
-    .dashboard-card {{
-        background-color: white; border-radius: 20px; padding: 24px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #E2E8F0;
-        height: 100%; transition: transform 0.2s ease;
-    }}
+    .dashboard-card {{ background-color: white; border-radius: 20px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #E2E8F0; height: 100%; transition: transform 0.2s ease; }}
     .dashboard-card:hover {{ transform: translateY(-2px); }}
     .card-label {{ font-family: 'Lato', sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #94A3B8; margin-bottom: 8px; }}
     .card-value {{ font-family: 'Libre Baskerville', serif; font-size: 32px; color: {NAVY}; font-weight: 700; margin-bottom: 16px; }}
     .card-footer {{ font-size: 13px; font-weight: 600; color: {TEAL}; display: flex; align-items: center; gap: 6px; }}
-    
-    /* Widget Examens Propre */
-    .exam-row {{
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 12px 0; border-bottom: 1px solid #F1F5F9;
-    }}
-    .exam-row:last-child {{ border-bottom: none; }}
+    .exam-row {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #F1F5F9; }}
     .exam-tag {{ padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; color: white; }}
-    
-    /* Widget Todo */
-    .todo-item {{ background: white; padding: 10px; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }}
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
 
-    # 1. CALCULS EN TEMPS RÉEL (LE BACKEND)
     df_sim = pd.DataFrame()
     s1_avg_display = "0.00/20"
     if sh:
@@ -203,9 +190,7 @@ def dashboard_page(sh):
                 if valid.any(): s1_avg_display = f"{s1.loc[valid, 'Moy'].mean():.2f}/20"
         except: pass
 
-    # 2. AFFICHAGE (LE FRONTEND BEAU)
     c1, c2 = st.columns(2)
-    
     with c1:
         st.markdown(f"""
         <div class="dashboard-card">
@@ -234,19 +219,40 @@ def dashboard_page(sh):
         if st.button("🚀 Accéder à la Focus Room", key="btn_focus", use_container_width=True):
             st.session_state.current_view = "Focus Room"; st.rerun()
 
-    # SECTION SIMULATEUR
     if st.session_state.show_simulator and sh:
-        st.write(""); st.info("Modifie tes notes ici.")
+        st.write(""); st.info("Modifie tes notes ici. Le calcul se met à jour après sauvegarde.")
         try:
             tab1, tab2 = st.tabs(["S1", "S2"])
             cfg = {"Matiere": st.column_config.TextColumn(disabled=True), "Semestre": None}
-            with tab1: e1 = st.data_editor(df_sim[df_sim['Semestre']=='S1'], column_config=cfg, hide_index=True, key="e1", use_container_width=True)
-            with tab2: e2 = st.data_editor(df_sim[df_sim['Semestre']=='S2'], column_config=cfg, hide_index=True, key="e2", use_container_width=True)
+            
+            # Fonction pour afficher le tableau AVEC COULEURS
+            def show_sim_table(df_semestre, key_s):
+                edited_df = st.data_editor(df_semestre, column_config=cfg, hide_index=True, key=f"ed_{key_s}", use_container_width=True)
+                
+                # Calcul en direct pour affichage
+                total_c = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
+                edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / total_c.replace(0, 1)
+                edited_df.loc[total_c == 0, 'Moyenne'] = 0
+                
+                st.write("**Résultats :**")
+                # LE RETOUR DU DÉGRADÉ DE COULEURS
+                st.dataframe(
+                    edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20),
+                    use_container_width=True
+                )
+                return edited_df
+
+            with tab1: e1 = show_sim_table(df_sim[df_sim['Semestre']=='S1'], "s1")
+            with tab2: e2 = show_sim_table(df_sim[df_sim['Semestre']=='S2'], "s2")
+            
             if st.button("💾 Sauvegarder"):
-                full = pd.concat([e1, e2])
+                # On nettoie la colonne Moyenne avant sauvegarde
+                clean_s1 = e1.drop(columns=['Moyenne'], errors='ignore')
+                clean_s2 = e2.drop(columns=['Moyenne'], errors='ignore')
+                full = pd.concat([clean_s1, clean_s2])
                 sh.worksheet("Simulateur").update([full.columns.values.tolist()] + full.values.tolist())
                 st.success("Sauvegardé !"); time.sleep(1); st.rerun()
-        except: st.error("Erreur Simulateur")
+        except Exception as e: st.error(f"Erreur Simulateur: {e}")
 
     st.write("")
     cl, cr = st.columns([2, 1])
@@ -258,17 +264,14 @@ def dashboard_page(sh):
         calendar(events=cal_evs, options={"initialView": "timeGridWeek", "height": "500px", "locale": "fr"}, custom_css=".fc-event{font-size:10px;}")
 
     with cr:
-        # WIDGET EXAMENS (DESIGN HTML)
         st.markdown(f"#### <span style='color:{NAVY}'>⏳ Examens</span>", unsafe_allow_html=True)
         html_exams = ""
         if sh:
             df_ex = get_exams(sh)
-            # Petit éditeur pour ajouter/modifier
             with st.expander("Gérer"):
                 edited_exams = st.data_editor(df_ex, num_rows="dynamic", hide_index=True, key="ex_edit")
                 if not df_ex.equals(edited_exams): save_exams(sh, edited_exams); st.rerun()
             
-            # Génération HTML
             today = date.today()
             if not edited_exams.empty:
                 try:
@@ -278,7 +281,7 @@ def dashboard_page(sh):
                     count = 0
                     for _, row in edited_exams.iterrows():
                         delta = (row['DateObj'] - today).days
-                        if delta >= 0 and count < 5: # Max 5 exams
+                        if delta >= 0 and count < 5:
                             col = RED_URGENT if delta < 7 else ORANGE_REV if delta < 14 else TEAL
                             html_content += f"""
                             <div class="exam-row">
@@ -293,16 +296,15 @@ def dashboard_page(sh):
                 except: st.error("Erreur date exams")
             else: st.info("Ajoute des examens !")
 
-        # WIDGET TO-DO
         st.write(""); st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do</span>", unsafe_allow_html=True)
         if sh:
-            tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
+            ws_t = sh.worksheet("Tasks")
+            tasks = pd.DataFrame(ws_t.get_all_records())
             todo = tasks[tasks['Status'] == 'À faire'] if not tasks.empty else pd.DataFrame()
             if not todo.empty:
                 for i, r in todo.head(4).iterrows():
                     c_chk, c_txt = st.columns([1, 5])
                     if c_chk.button("✔", key=f"d_{r['ID']}"):
-                        ws_t = sh.worksheet("Tasks")
                         ws_t.update_cell(ws_t.find(r['ID']).row, 4, "Fait"); save_to_history(sh, "Task", r['Subject'], 1); st.rerun()
                     c_txt.caption(f"{r['Task']} ({r['Subject']})")
             else: st.success("Tout est fait ! 🎉")
