@@ -18,10 +18,10 @@ import io
 # --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
-# --- GESTION DE L'ÉTAT (SESSION STATE) ---
+# --- GESTION DE L'ÉTAT ---
 if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
-if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False # Pour ouvrir le simulateur
+if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False
 
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
@@ -89,10 +89,25 @@ st.markdown(f"""
         background-color: {TEAL} !important;
         color: white !important;
     }}
+
+    /* Timer Focus */
+    .timer-display {{
+        font-size: 80px;
+        font-weight: bold;
+        color: {NAVY};
+        text-align: center;
+        font-family: 'Courier New', monospace;
+        background-color: white;
+        padding: 20px;
+        border-radius: 20px;
+        border: 4px solid {GOLD};
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        margin: 20px 0;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- DONNÉES MATIÈRES (PAR DÉFAUT) ---
+# --- DONNÉES MATIÈRES ---
 DEFAULT_S1 = [
     "Théorie des organisations", "Management Control", "Marché Financier", "TQG", 
     "Financial Analysis", "Droit des sociétés", "Droit fiscal", "Comptabilité", "Anglais"
@@ -100,11 +115,12 @@ DEFAULT_S1 = [
 DEFAULT_S2 = [
     "Diagnostic Financier", "Compta Approfondie 2", "Modélisation des Coûts", 
     "Int. Financial Accounting", "Diagnostic Général", "Droit des Sociétés 2", 
-    "Droit du Crédit", "Droit Pénal Affaires", "Organisation et SI", "Info. Décisionnelle"
+    "Droit du Crédit", "Droit Pénal Affaires", "Organisation et SI", "Info. Décisionnelle", 
+    "Anglais S2", "Projet Pro"
 ]
 
+# Config globale pour les icônes/couleurs (contient S1 et S2)
 SUBJECTS_CONFIG = {s: {"cat": "Cours", "color": NAVY, "icon": "book"} for s in DEFAULT_S1 + DEFAULT_S2}
-SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
 # --- CONNEXIONS GOOGLE ---
 @st.cache_resource 
@@ -172,7 +188,7 @@ def get_combined_events(ics_url, sh):
         except: pass
     return events
 
-# --- FONCTION KPI CARD (CELLE QUI MANQUAIT !) ---
+# --- FONCTION KPI CARD ---
 def kpi_card(title, value, subtitle, color, icon):
     st.markdown(f"""
     <div class="kpi-card" style="border-left: 5px solid {color};">
@@ -191,13 +207,10 @@ def kpi_card(title, value, subtitle, color, icon):
 
 # --- CALCULATEUR MOYENNE ---
 def load_simulator_data(sh):
-    """Charge ou initialise les données du simulateur dans Google Sheets"""
     try:
         ws = sh.worksheet("Simulateur")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
-        
-        # Si vide, on initialise
         if df.empty:
             init_data = []
             for m in DEFAULT_S1: init_data.append({"Matiere": m, "Semestre": "S1", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
@@ -210,7 +223,6 @@ def load_simulator_data(sh):
 def save_simulator_data(sh, df):
     try:
         ws = sh.worksheet("Simulateur")
-        # On s'assure de ne sauvegarder que les colonnes nécessaires (pas la moyenne calculée)
         cols_to_save = ["Matiere", "Semestre", "Coef_CC", "Coef_Partiel", "Note_CC", "Note_Partiel"]
         df_save = df[cols_to_save]
         ws.update([df_save.columns.values.tolist()] + df_save.values.tolist())
@@ -221,7 +233,6 @@ def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
-        
         selected = option_menu(
             menu_title=None,
             options=["Dashboard", "Mes Cours", "Focus Room"],
@@ -239,11 +250,9 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
-    # HEADER
     st.markdown(f"### 👋 Dashboard Étudiant")
     st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
 
-    # CHARGEMENT DONNÉES SIMULATEUR
     df_sim = pd.DataFrame()
     s1_avg_display = "0.0/20"
     
@@ -251,20 +260,16 @@ def dashboard_page(sh):
         df_sim = load_simulator_data(sh)
         if not df_sim.empty:
             df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-            # Calcul sécurisé de la moyenne
+            # Calcul sécurisé : Si Coef CC = 0, il est ignoré
             df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
             valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
             if valid_coefs.any():
                 global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
                 s1_avg_display = f"{global_avg:.2f}/20"
 
-    # KPI ROW
     c1, c2, c3 = st.columns(3)
-    
-    # KPI 1 : MOYENNE (CLIQUABLE VIA UN VRAI BOUTON DESSOUS POUR ÉVITER LES BUGS)
     with c1:
         kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
-        # Bouton clair pour ouvrir le simulateur
         if st.button("🧮 Ouvrir le Simulateur de Notes", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
@@ -272,15 +277,13 @@ def dashboard_page(sh):
     with c2: kpi_card("Tâches", "Voir", "To-Do List", TEAL, "⚡")
     with c3: kpi_card("Semaine", f"S{datetime.now().isocalendar()[1]}", "Calendrier", GOLD, "📅")
 
-    # --- SECTION SIMULATEUR ---
     if st.session_state.show_simulator and not df_sim.empty:
         st.write("")
         st.markdown(f"### 🧮 Simulateur de Notes")
-        st.info("Modifie les notes et les coefficients directement dans le tableau. La moyenne se met à jour automatiquement.")
+        st.info("💡 ASTUCE : Si une matière n'a pas de CC, mets le 'Coef CC' à 0.")
         
         tab_s1, tab_s2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
         
-        # Configuration des colonnes pour ressembler à ton Excel
         cols_config = {
             "Matiere": st.column_config.TextColumn("Matière", disabled=True, width="medium"),
             "Semestre": None,
@@ -292,32 +295,20 @@ def dashboard_page(sh):
 
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
-            
-            # Calcul en temps réel pour affichage
             if not edited_df.empty:
+                # Le calcul gère automatiquement le coef 0
                 edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / (edited_df['Coef_CC'] + edited_df['Coef_Partiel'])
                 edited_df['Moyenne'] = edited_df['Moyenne'].fillna(0)
-                
-                # Affichage des résultats
                 st.write("**Résultats calculés :**")
-                st.dataframe(
-                    edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20),
-                    use_container_width=True
-                )
-                
-                # Moyenne Générale
+                st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
                 avg_sem = edited_df['Moyenne'].mean()
                 st.metric(f"Moyenne Générale {key_suffix}", f"{avg_sem:.2f}/20")
                 return edited_df
 
-        with tab_s1:
-            edited_s1 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S1'], "S1")
-        
-        with tab_s2:
-            edited_s2 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S2'], "S2")
+        with tab_s1: edited_s1 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S1'], "S1")
+        with tab_s2: edited_s2 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S2'], "S2")
 
         if st.button("💾 Sauvegarder dans Google Sheets", type="primary"):
-            # Reconstitution du DataFrame complet pour sauvegarde
             clean_s1 = edited_s1.drop(columns=['Moyenne'], errors='ignore')
             clean_s2 = edited_s2.drop(columns=['Moyenne'], errors='ignore')
             full_df = pd.concat([clean_s1, clean_s2])
@@ -325,10 +316,8 @@ def dashboard_page(sh):
             st.success("✅ Sauvegardé !")
             time.sleep(1)
             st.rerun()
-        
         st.markdown("---")
 
-    # CALENDRIER & TACHES
     st.write("")
     c_left, c_right = st.columns([2, 1])
     with c_left:
@@ -351,11 +340,13 @@ def dashboard_page(sh):
                             c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span>", unsafe_allow_html=True)
             except: st.info("Aucune tâche.")
 
-# --- PAGE 2 & 3 & 4 (COURS & FOCUS) ---
+# --- PAGE 2: GRILLE DES COURS (S2 SEULEMENT) ---
 def courses_grid_page():
-    st.markdown("### 📚 Mes Modules"); st.write("")
+    st.markdown("### 📚 Mes Modules S2"); st.write("")
+    
+    # ICI : ON N'UTILISE QUE DEFAULT_S2 (Correction demandée)
     cols = st.columns(3)
-    for index, subject in enumerate(SUBJECTS):
+    for index, subject in enumerate(DEFAULT_S2):
         with cols[index % 3]:
             st.markdown(f"""<div style="background-color:white; padding:20px; border-radius:10px; border-left:5px solid {NAVY}; margin-bottom:10px; box-shadow:0 2px 5px rgba(0,0,0,0.05)"><h3>{subject}</h3></div>""", unsafe_allow_html=True)
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
@@ -377,20 +368,60 @@ def subject_detail_page(sh, drive, subject):
             t, d = st.columns([3, 1]); nt = t.text_input("Tâche"); nd = d.date_input("Date")
             if st.button("Ajouter"): sh.worksheet("Tasks").append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
 
+# --- PAGE 4: FOCUS ROOM (RESTORED & FIXED) ---
 def focus_room_page():
-    st.title("⏳ Focus Room")
-    if st.button("▶ LANCER 25 MIN", type="primary"):
-        with st.empty():
-            for i in range(25*60, -1, -1):
-                st.markdown(f"<h1 style='text-align:center; font-size:80px;'>{i//60:02}:{i%60:02}</h1>", unsafe_allow_html=True); time.sleep(1)
+    st.markdown(f"### ⏳ Focus Room")
+    st.markdown("Configure ta session et ne ferme pas cet onglet.")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    work_min = c1.number_input("Travail (min)", 1, 60, 25)
+    short_break = c2.number_input("Pause courte", 1, 15, 5)
+    long_break = c3.number_input("Pause longue", 5, 30, 15)
+    cycles = c4.number_input("Cycles", 1, 10, 4)
+
+    col_center, _ = st.columns([1, 2])
+    start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
+
+    placeholder = st.empty()
+
+    if start_btn:
+        total_cycles = cycles
+        for i in range(total_cycles):
+            # TRAVAIL
+            for remaining in range(work_min * 60, -1, -1):
+                mins, secs = divmod(remaining, 60)
+                with placeholder.container():
+                    st.markdown(f"<p class='timer-label'>💻 CYCLE {i+1}/{total_cycles} • FOCUS</p>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+                    st.progress((work_min*60 - remaining) / (work_min*60))
+                time.sleep(1)
+            
+            # PAUSE (Courte ou Longue)
+            is_long = (i + 1) % 4 == 0 and i != 0
+            break_time = long_break if is_long else short_break
+            label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
+            
+            if i < total_cycles - 1: # Pas de pause après le dernier cycle
+                for remaining in range(break_time * 60, -1, -1):
+                    mins, secs = divmod(remaining, 60)
+                    with placeholder.container():
+                        st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+                    time.sleep(1)
+        
         st.balloons()
+        st.success("Session terminée ! Bravo 🎉")
 
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
-    page = sidebar_menu()
-    if page != st.session_state.current_view: st.session_state.current_view = page; st.session_state.selected_subject = None; st.rerun()
+    selected_page = sidebar_menu()
     
+    if selected_page != st.session_state.current_view:
+        st.session_state.current_view = selected_page
+        st.session_state.selected_subject = None
+        st.rerun()
+
     if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
         if st.session_state.selected_subject: subject_detail_page(sh, drive, st.session_state.selected_subject)
