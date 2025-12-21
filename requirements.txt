@@ -7,3 +7,6 @@ pypdf
 python-docx
 streamlit-option-menu
 plotly
+icalendar
+requests
+streamlit-calendar
