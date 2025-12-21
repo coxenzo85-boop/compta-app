@@ -8,22 +8,15 @@ import time
 from pypdf import PdfReader
 from docx import Document
 import uuid
+from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
 from icalendar import Calendar
 from streamlit_calendar import calendar
 
-# --- CONFIGURATION PAGE ---
+# --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
-
-# --- 🧠 GESTION DE LA MÉMOIRE (SESSION STATE) - PLACÉ EN HAUT POUR ÉVITER LES CRASH ---
-if 'current_view' not in st.session_state:
-    st.session_state.current_view = 'Dashboard'
-if 'selected_subject' not in st.session_state:
-    st.session_state.selected_subject = None
-if 'pomodoro' not in st.session_state:
-    st.session_state.pomodoro = None
 
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
@@ -35,7 +28,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# --- INJECTION CSS (INTERACTIVITÉ TOTALE) ---
+# INJECTION CSS (INTERACTIVITÉ TOTALE)
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -51,46 +44,57 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    /* --- SIDEBAR --- */
-    [data-testid="stSidebar"] {{
-        background-color: {NAVY};
-        border-right: 1px solid #334155;
-    }}
-    [data-testid="stSidebar"] h2 {{
-        color: white !important;
-        text-align: center;
-    }}
+    /* --- 1. SIDEBAR INTERACTIVE --- */
+    [data-testid="stSidebar"] {{ background-color: {NAVY}; }}
+    [data-testid="stSidebar"] h1 {{ color: white !important; }}
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
     
-    /* MENU RADIO TRANSFORMÉ EN BOUTONS INTERACTIFS */
-    [data-testid="stSidebar"] [role="radiogroup"] label {{
-        padding: 10px 15px !important;
-        margin-bottom: 8px !important;
-        background-color: transparent !important;
-        border: 1px solid transparent !important;
-        border-radius: 8px !important;
-        color: #cbd5e1 !important;
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
-        cursor: pointer !important;
+    /* Animation des liens du menu */
+    .nav-link {{
+        transition: all 0.3s ease !important;
     }}
-    [data-testid="stSidebar"] [role="radiogroup"] label:hover {{
-        background-color: rgba(0, 128, 128, 0.2) !important;
+    .nav-link:hover {{
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        transform: translateX(8px) !important; /* Décalage vers la droite */
         color: {GOLD} !important;
-        border-color: {TEAL} !important;
-        transform: translateX(10px) !important;
-    }}
-    [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] {{
-        background-color: {TEAL} !important;
-        color: white !important;
-        font-weight: bold !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-        transform: scale(1.02) !important;
-    }}
-    /* Cache les ronds */
-    [data-testid="stSidebar"] [role="radiogroup"] label div:first-child {{
-        display: none;
     }}
 
-    /* --- CARTES COURS (CLIQUABLES + EFFET HOVER) --- */
+    /* --- 2. TABS INTERACTIFS (IA, Notes, Tâches) --- */
+    button[data-baseweb="tab"] {{
+        transition: all 0.3s ease;
+        border-radius: 5px;
+        margin: 0 2px;
+    }}
+    button[data-baseweb="tab"]:hover {{
+        background-color: rgba(0, 128, 128, 0.1); /* Teal très clair */
+        color: {TEAL};
+        font-weight: bold;
+        transform: translateY(-2px);
+    }}
+    /* Onglet actif */
+    button[data-baseweb="tab"][aria-selected="true"] {{
+        background-color: {TEAL} !important;
+        color: white !important;
+    }}
+
+    /* --- 3. KPI CARDS (Hover) --- */
+    .kpi-card {{
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        border-left: 5px solid {NAVY};
+        transition: all 0.3s ease;
+        cursor: default;
+    }}
+    .kpi-card:hover {{
+        transform: translateY(-5px) scale(1.02);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        border-left-color: {TEAL};
+    }}
+
+    /* --- 4. CARTES DE COURS (Magie Cliquable) --- */
+    
     .course-card-bg {{
         background-color: white;
         border-radius: 15px;
@@ -99,47 +103,53 @@ st.markdown(f"""
         border: 1px solid #e2e8f0;
         border-left: 6px solid {NAVY};
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        position: relative;
+        position: relative; /* Important pour l'alignement */
         z-index: 0;
-        transition: transform 0.3s ease;
-    }}
-    .element-container:hover .course-card-bg {{
-        transform: translateY(-5px);
-        border-left-color: {TEAL} !important;
     }}
 
-    /* Bouton invisible overlay (le hack pour rendre cliquable) */
+    /* LE BOUTON INVISIBLE MAIS RÉACTIF */
+    /* On cible le bouton qui a la classe 'click-cover' (injectée via le hack CSS plus bas) */
     div.stButton > button.click-cover {{
         position: absolute;
         top: -190px;
         left: 0;
         width: 100%;
         height: 200px;
-        opacity: 0;
+        opacity: 0; /* Invisible par défaut */
         z-index: 2;
         cursor: pointer;
         transition: all 0.3s ease;
+        background-color: {TEAL}; /* Couleur de fond au survol */
+        border: none;
     }}
+
+    /* L'effet au survol du bouton invisible */
     div.stButton > button.click-cover:hover {{
+        opacity: 0.05; /* On le rend légèrement visible (voile coloré) */
+        transform: scale(1.03); /* On fait grossir légèrement la zone */
+        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+    }}
+    
+    /* Quand on survole le bouton, on veut que le HTML en dessous semble réagir */
+    /* Note: En CSS pur, on ne peut pas affecter le frère précédent (la carte HTML) en survolant le frère suivant (le bouton).
+       C'est pourquoi on utilise l'opacity sur le bouton lui-même pour créer le voile coloré. */
+
+    /* Boutons classiques */
+    .stButton>button {{
         background-color: {TEAL};
-        opacity: 0.05;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        transition: all 0.3s;
+    }}
+    .stButton>button:not(.click-cover):hover {{
+        background-color: {NAVY};
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
     }}
 
-    /* --- KPI CARDS --- */
-    .kpi-card {{
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border-left: 5px solid {NAVY};
-        transition: all 0.3s ease;
-    }}
-    .kpi-card:hover {{
-        transform: translateY(-5px);
-        border-left-color: {TEAL};
-    }}
-
-    /* --- TIMER FOCUS --- */
+    /* TIMER */
     .timer-display {{
         font-size: 80px;
         font-weight: bold;
@@ -152,6 +162,14 @@ st.markdown(f"""
         border: 4px solid {GOLD};
         box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         margin: 20px 0;
+    }}
+    .timer-label {{
+        text-align: center; 
+        font-size: 24px; 
+        font-weight: bold; 
+        color: {TEAL};
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -173,6 +191,10 @@ SUBJECTS_CONFIG = {
     "Stage et Mémoire": {"icon": "mortarboard", "cat": "Pro", "color": TEAL}
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
+
+# --- GESTION DE L'ÉTAT ---
+if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
+if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 
 # --- CONNEXIONS & UTILS ---
 @st.cache_resource 
@@ -256,22 +278,23 @@ def kpi_card(title, value, subtitle, color, icon):
 # --- NAVIGATION SIDEBAR ---
 def sidebar_menu():
     with st.sidebar:
-        st.markdown(f"<h2 style='margin-bottom:20px;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
-        page = st.radio("Menu", ["Dashboard", "Mes Cours", "Focus Room"], label_visibility="collapsed")
+        st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
+        st.write("")
         
-        st.markdown("---")
-        st.markdown(f"<p style='text-align:center; color:{GOLD}; font-size:12px; font-weight:bold;'>FOCUS RAPIDE</p>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        if c1.button("▶ 25m", use_container_width=True): st.session_state.pomodoro = time.time()
-        if c2.button("⏹ Stop", use_container_width=True): st.session_state.pomodoro = None
-        
-        if st.session_state.get("pomodoro"):
-            elapsed = time.time() - st.session_state.pomodoro
-            left = 25*60 - elapsed
-            if left > 0:
-                mins, secs = divmod(left, 60)
-                st.markdown(f"<h1 style='text-align:center; color:white;'>{int(mins):02}:{int(secs):02}</h1>", unsafe_allow_html=True)
-    return page
+        selected = option_menu(
+            menu_title=None,
+            options=["Dashboard", "Mes Cours", "Focus Room"],
+            icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
+            menu_icon="cast",
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": NAVY},
+                "icon": {"color": "#94a3b8", "font-size": "14px"}, 
+                "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "color": "#e2e8f0"},
+                "nav-link-selected": {"background-color": TEAL, "color": "white", "font-weight": "bold"},
+            }
+        )
+    return selected
 
 # --- PAGE 1: DASHBOARD ---
 def dashboard_page(sh):
@@ -356,16 +379,20 @@ def dashboard_page(sh):
                     c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
         else: st.info("Rien à faire !")
 
-# --- PAGE 2: GRILLE DES COURS ---
+# --- PAGE 2: GRILLE DES COURS (CLIQUABLE + HOVER EFFECT) ---
 def courses_grid_page():
     st.markdown(f"### 📚 Mes Modules")
-    st.markdown("Accès rapide aux ressources.")
+    st.markdown("Accès rapide à tes cours.")
     st.write("")
+
     cols = st.columns(3)
+    
     for index, subject in enumerate(SUBJECTS):
         conf = SUBJECTS_CONFIG[subject]
         col = cols[index % 3]
+        
         with col:
+            # 1. VISUEL (HTML)
             st.markdown(f"""
             <div class="course-card-bg">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
@@ -378,15 +405,33 @@ def courses_grid_page():
                 <div style="height: 4px; width: 40px; background-color: {conf['color']}; border-radius: 2px;"></div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # 2. BOUTON (Invisible Overlay)
+            # On utilise une clé CSS unique pour cibler ce bouton spécifiquement
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
                 st.session_state.selected_subject = subject
                 st.rerun()
-            st.markdown(f"""<style>
+            
+            # 3. CSS HACK pour transformer ce bouton en "Cover" (Couverture)
+            # On cible le n-ième bouton de la colonne
+            st.markdown(f"""
+            <style>
             div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{
-                position: absolute !important; top: -190px !important; left: 0 !important; width: 100% !important; height: 200px !important; opacity: 0 !important; z-index: 2 !important;
+                /* On applique la classe 'click-cover' manuellement via le style inline */
+                position: absolute !important;
+                top: -190px !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 200px !important;
+                opacity: 0 !important;
+                z-index: 2 !important;
             }}
-            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{ opacity: 0.05 !important; background-color: {TEAL} !important; }}
-            </style>""", unsafe_allow_html=True)
+            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{
+                opacity: 0.05 !important; /* Petit voile au survol */
+                background-color: {TEAL} !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
 
 # --- PAGE 3: DÉTAIL MATIÈRE ---
 def subject_detail_page(sh, subject):
@@ -454,6 +499,7 @@ def subject_detail_page(sh, subject):
             cb.write(""); cb.write("")
             if cb.button("Ajouter", key=f"bt_{subject}"):
                 ws_t.append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
+            
             recs = ws_t.get_all_records()
             if recs:
                 df = pd.DataFrame(recs)
@@ -466,21 +512,26 @@ def subject_detail_page(sh, subject):
                     d_show = f"📅 {r['Due_Date']}" if r["Due_Date"] else ""
                     c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
-# --- PAGE 4: FOCUS ROOM ---
+# --- PAGE 4: FOCUS ROOM (POMODORO PRO) ---
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
-    st.markdown("Configure ta session.")
+    st.markdown("Configure ta session et ne ferme pas cet onglet.")
+    
     c1, c2, c3, c4 = st.columns(4)
     work_min = c1.number_input("Travail (min)", 1, 60, 25)
     short_break = c2.number_input("Pause courte", 1, 15, 5)
     long_break = c3.number_input("Pause longue", 5, 30, 15)
     cycles = c4.number_input("Cycles", 1, 10, 4)
+
     col_center, _ = st.columns([1, 2])
     start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
+
     placeholder = st.empty()
+
     if start_btn:
         total_cycles = cycles
         for i in range(total_cycles):
+            # TRAVAIL
             for remaining in range(work_min * 60, -1, -1):
                 mins, secs = divmod(remaining, 60)
                 with placeholder.container():
@@ -488,19 +539,24 @@ def focus_room_page():
                     st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
                     st.progress((work_min*60 - remaining) / (work_min*60))
                 time.sleep(1)
+            
+            # PAUSE
             if i < total_cycles - 1:
                 is_long = (i + 1) % 4 == 0
                 break_time = long_break if is_long else short_break
                 label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
+                
                 for remaining in range(break_time * 60, -1, -1):
                     mins, secs = divmod(remaining, 60)
                     with placeholder.container():
                         st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
                         st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
                     time.sleep(1)
-        st.balloons(); st.success("Session terminée ! Bravo 🎉")
+        
+        st.balloons()
+        st.success("Session terminée ! Bravo 🎉")
 
-# --- MAIN ---
+# --- MAIN LOGIC ---
 if __name__ == "__main__":
     sh = get_db_connection()
     selected_page = sidebar_menu()
@@ -514,4 +570,5 @@ if __name__ == "__main__":
     elif st.session_state.current_view == "Mes Cours":
         if st.session_state.selected_subject: subject_detail_page(sh, st.session_state.selected_subject)
         else: courses_grid_page()
-    elif st.session_state.current_view == "Focus Room": focus_room_page()
+    elif st.session_state.current_view == "Focus Room":
+        focus_room_page()
