@@ -319,13 +319,13 @@ def subject_page(sh, subject):
                 st.markdown(resp)
             st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
 
-   # TAB 2: NOTES
+# TAB 2: NOTES
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
             ws_g = sh.worksheet("Grades")
             
-            # PARTIE GAUCHE : AJOUTER
+            # PARTIE GAUCHE : AJOUTER UNE NOTE
             with c1:
                 with st.form("add_n"):
                     st.write("**Ajouter une note**")
@@ -357,16 +357,27 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                                # LE BOUTON SUPPRIMER EST ICI 👇
+                                # --- BOUTON SUPPRIMER CORRIGÉ ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
-                                        cell = ws_g.find(str(row['ID'])) # Trouve la ligne dans Google Sheet
-                                        ws_g.delete_rows(cell.row)       # Supprime la ligne
+                                        st.toast("⏳ Suppression en cours...")
+                                        id_a_chercher = str(row['ID']) # On force le texte
+                                        
+                                        # 1. On cherche la cellule
+                                        cell = ws_g.find(id_a_chercher)
+                                        
+                                        # 2. On supprime la ligne
+                                        ws_g.delete_rows(cell.row)
+                                        
                                         st.success("Supprimé !")
                                         time.sleep(1)
                                         st.rerun()
-                                    except:
-                                        st.error("Erreur")
+                                        
+                                    except gspread.exceptions.CellNotFound:
+                                        st.error(f"ID introuvable : '{row['ID']}'. Vérifie le fichier Sheets.")
+                                    except Exception as e:
+                                        st.error(f"Erreur technique : {e}")
+                                # --------------------------------
                     else:
                         st.info("Aucune note pour cette matière.")
                 else:
