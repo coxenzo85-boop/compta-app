@@ -319,7 +319,7 @@ def subject_page(sh, subject):
                 st.markdown(resp)
             st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
 
-# TAB 2: NOTES
+    # TAB 2: NOTES (AVEC LA CORRECTION SUPPRESSION)
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
@@ -338,7 +338,7 @@ def subject_page(sh, subject):
                         time.sleep(1)
                         st.rerun()
             
-            # PARTIE DROITE : LISTE + SUPPRESSION
+            # PARTIE DROITE : LISTE + SUPPRESSION ROBUSTE
             with c2:
                 recs = ws_g.get_all_records()
                 df = pd.DataFrame(recs)
@@ -357,37 +357,37 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                               # --- BOUTON SUPPRIMER (MÉTHODE NUCLÉAIRE / TYPE-AGNOSTIC) ---
+                                # --- BOUTON SUPPRIMER CORRIGÉ ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
-                                        st.toast("⏳ Suppression en cours...")
+                                        st.toast("🔍 Recherche en cours...")
                                         
-                                        # 1. On nettoie l'ID qu'on cherche (on le force en texte propre)
-                                        target_id = str(row['ID']).strip()
+                                        # 1. On nettoie l'ID cible (on enlève les espaces et les .0 à la fin)
+                                        # C'est la clé du succès : on uniformise le format
+                                        target_id = str(row['ID']).strip().replace(".0", "")
                                         
                                         # 2. On récupère toute la colonne A
                                         all_ids = ws_g.col_values(1)
                                         
-                                        # 3. On cherche manuellement en convertissant tout en texte
                                         row_to_delete = -1
                                         
-                                        # On parcourt chaque ligne pour comparer "Texte contre Texte"
+                                        # 3. On compare en nettoyant TOUS les IDs du fichier de la même façon
                                         for index, value in enumerate(all_ids):
-                                            # On force la valeur du fichier en texte pour comparer
-                                            if str(value).strip() == target_id:
-                                                # Bingo ! On a trouvé l'index (0, 1, 2...)
-                                                # Google Sheets commence à 1, donc on ajoute +1
-                                                row_to_delete = index + 1
+                                            # On nettoie la valeur du fichier (enlève espaces et .0)
+                                            clean_value = str(value).strip().replace(".0", "")
+                                            
+                                            if clean_value == target_id:
+                                                row_to_delete = index + 1 # Google Sheets commence à 1
                                                 break
                                         
                                         # 4. Action
                                         if row_to_delete != -1:
                                             ws_g.delete_rows(row_to_delete)
-                                            st.success("Supprimé !")
+                                            st.success("✅ Supprimé !")
                                             time.sleep(1)
                                             st.rerun()
                                         else:
-                                            st.error(f"ID '{target_id}' introuvable (Problème de format).")
+                                            st.error(f"Introuvable. ID cherché : '{target_id}'")
                                             
                                     except Exception as e:
                                         st.error(f"Erreur technique : {e}")
