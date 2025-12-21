@@ -24,7 +24,6 @@ CLOUD = "#F4F6F7"
 # INJECTION CSS (Le coeur du design)
 st.markdown(f"""
     <style>
-    /* Import des polices du design */
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
     
     html, body, [class*="css"] {{
@@ -38,7 +37,6 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    /* Sidebar Custom */
     [data-testid="stSidebar"] {{
         background-color: {NAVY};
     }}
@@ -49,7 +47,6 @@ st.markdown(f"""
         color: #cbd5e1 !important;
     }}
 
-    /* Cards KPI (Simulation du HTML) */
     .kpi-card {{
         background-color: white;
         padding: 20px;
@@ -62,7 +59,6 @@ st.markdown(f"""
         transform: translateY(-5px);
     }}
     
-    /* Boutons Teal & Navy */
     .stButton>button {{
         background-color: {TEAL};
         color: white;
@@ -76,7 +72,6 @@ st.markdown(f"""
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }}
 
-    /* Onglets stylisés */
     .stTabs [data-baseweb="tab-list"] {{
         gap: 10px;
         background-color: white;
@@ -132,7 +127,7 @@ def extract_text(files):
     for f in files:
         try:
             if f.type == "application/pdf":
-                text += PdfReader(f).pages[0].extract_text() + "\n" # Simplifié pour vitesse
+                text += PdfReader(f).pages[0].extract_text() + "\n"
             elif "word" in f.type:
                 doc = Document(f)
                 for p in doc.paragraphs: text += p.text + "\n"
@@ -143,7 +138,7 @@ def get_gemini_response(prompt, context):
     try:
         api_key = st.secrets["gemini"]["api_key"]
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro') # Modèle stable
+        model = genai.GenerativeModel('gemini-pro')
         full_prompt = f"Tu es expert L3 Compta. Contexte: {context}. Question: {prompt}"
         return model.generate_content(full_prompt).text
     except Exception as e:
@@ -186,7 +181,6 @@ def sidebar_menu():
             }
         )
         
-        # Widget Pomodoro
         st.markdown("---")
         st.markdown(f"<p style='text-align:center; color:{GOLD}; font-size:12px; font-weight:bold;'>FOCUS ZONE</p>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
@@ -206,12 +200,10 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
-    # Header
     st.markdown(f"### 👋 Bonjour, voici ton état des lieux")
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
     st.write("")
 
-    # Data Fetching
     gpa = 0.0
     urgent_tasks = 0
     df_grades = pd.DataFrame()
@@ -235,7 +227,6 @@ def dashboard_page(sh):
             urgent_tasks = len([t for t in tasks if t['Status'] == 'À faire'])
         except: pass
 
-    # KPI ROW
     c1, c2, c3 = st.columns(3)
     with c1: kpi_card("Moyenne Générale", f"{gpa}/20", "📈 +0.5 pts vs S1", NAVY, "🎓")
     with c2: kpi_card("Tâches Urgentes", str(urgent_tasks), "🔥 Keep pushing", TEAL, "⚡")
@@ -244,14 +235,12 @@ def dashboard_page(sh):
     st.write("")
     st.write("")
 
-    # MAIN SECTION
     c_left, c_right = st.columns([2, 1])
 
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>📊 Répartition ECTS</span>", unsafe_allow_html=True)
-        # Beau graphique donut avec Plotly
         labels = ['Finance', 'Juridique', 'Systèmes', 'Pro']
-        values = [14, 12, 15, 16] # Valeurs fictives ou calculées
+        values = [14, 12, 15, 16] 
         colors = [NAVY, '#64748b', GOLD, TEAL]
         
         fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.7, marker=dict(colors=colors))])
@@ -277,21 +266,15 @@ def dashboard_page(sh):
 def subject_page(sh, subject):
     conf = SUBJECTS_CONFIG[subject]
     
-    # Header Matière Style HTML
     st.markdown(f"""
     <div style="background-color: white; padding: 30px; border-radius: 15px; border-top: 8px solid {conf['color']}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
         <span style="background-color: #f1f5f9; padding: 5px 10px; border-radius: 5px; font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b;">{conf['cat']}</span>
         <h1 style="color: {NAVY}; margin-top: 10px; margin-bottom: 5px;">{subject}</h1>
-        <div style="display:flex; gap: 15px; font-size: 14px; color: #64748b;">
-            <span>👨‍🏫 Professeur</span>
-            <span>⚖️ Coefficient</span>
-        </div>
     </div>
     """, unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["🤖 Tuteur IA", "📝 Notes & Simu", "✅ Tâches"])
 
-    # Sidebar Upload
     with st.sidebar:
         st.markdown("---")
         st.markdown("**📂 Documents du cours**")
@@ -319,13 +302,12 @@ def subject_page(sh, subject):
                 st.markdown(resp)
             st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
 
-    # TAB 2: NOTES (AVEC LA CORRECTION SUPPRESSION)
+    # TAB 2: NOTES (MÉTHODE GPS / LIGNE EXACTE)
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
             ws_g = sh.worksheet("Grades")
             
-            # PARTIE GAUCHE : AJOUTER UNE NOTE
             with c1:
                 with st.form("add_n"):
                     st.write("**Ajouter une note**")
@@ -338,18 +320,27 @@ def subject_page(sh, subject):
                         time.sleep(1)
                         st.rerun()
             
-            # PARTIE DROITE : LISTE + SUPPRESSION ROBUSTE
+            # LISTE DES NOTES AVEC SUPPRESSION PAR LIGNE EXACTE
             with c2:
-                recs = ws_g.get_all_records()
-                df = pd.DataFrame(recs)
+                # On charge tout sous forme de liste brute pour avoir le numéro de ligne
+                raw_data = ws_g.get_all_values()
                 
-                if not df.empty:
-                    # On filtre pour ne garder que la matière actuelle
+                # Si on a des données (au moins l'en-tête + 1 ligne)
+                if len(raw_data) > 1:
+                    header = raw_data[0]
+                    rows = raw_data[1:]
+                    
+                    # On crée le DataFrame
+                    df = pd.DataFrame(rows, columns=header)
+                    
+                    # On ajoute une colonne "Vraie Ligne Excel" (Index + 2 car Header=1)
+                    df['real_row_index'] = [i + 2 for i in range(len(rows))]
+                    
+                    # Filtre matière
                     df_sub = df[df['Subject'] == subject]
                     
                     if not df_sub.empty:
                         st.markdown("##### 📄 Mes notes")
-                        # On affiche chaque note ligne par ligne avec un bouton
                         for i, row in df_sub.iterrows():
                             with st.container(border=True):
                                 col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 1])
@@ -357,41 +348,17 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                                # --- BOUTON SUPPRIMER CORRIGÉ ---
+                                # BOUTON SUPPRIMER (PAR LIGNE DIRECTE)
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
-                                        st.toast("🔍 Recherche en cours...")
-                                        
-                                        # 1. On nettoie l'ID cible (on enlève les espaces et les .0 à la fin)
-                                        # C'est la clé du succès : on uniformise le format
-                                        target_id = str(row['ID']).strip().replace(".0", "")
-                                        
-                                        # 2. On récupère toute la colonne A
-                                        all_ids = ws_g.col_values(1)
-                                        
-                                        row_to_delete = -1
-                                        
-                                        # 3. On compare en nettoyant TOUS les IDs du fichier de la même façon
-                                        for index, value in enumerate(all_ids):
-                                            # On nettoie la valeur du fichier (enlève espaces et .0)
-                                            clean_value = str(value).strip().replace(".0", "")
-                                            
-                                            if clean_value == target_id:
-                                                row_to_delete = index + 1 # Google Sheets commence à 1
-                                                break
-                                        
-                                        # 4. Action
-                                        if row_to_delete != -1:
-                                            ws_g.delete_rows(row_to_delete)
-                                            st.success("✅ Supprimé !")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error(f"Introuvable. ID cherché : '{target_id}'")
-                                            
+                                        # On supprime DIRECTEMENT la ligne connue. Pas de recherche.
+                                        row_num = int(row['real_row_index'])
+                                        ws_g.delete_rows(row_num)
+                                        st.success("✅ Supprimé !")
+                                        time.sleep(1)
+                                        st.rerun()
                                     except Exception as e:
-                                        st.error(f"Erreur technique : {e}")
-                                # --------------------------------
+                                        st.error(f"Erreur : {e}")
                     else:
                         st.info("Aucune note pour cette matière.")
                 else:
