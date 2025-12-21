@@ -317,7 +317,6 @@ def dashboard_page(sh):
         calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
         if sh:
-            # AJOUT
             with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event"):
                     ev_title = st.text_input("Matière / Titre")
@@ -338,7 +337,6 @@ def dashboard_page(sh):
                         except Exception as e:
                             st.error(f"Erreur : {e}")
 
-            # SUPPRESSION (CORRIGÉE !)
             with st.expander("🗑️ Gérer / Supprimer mes événements"):
                 try:
                     ws_ev = sh.worksheet("Events")
@@ -348,7 +346,6 @@ def dashboard_page(sh):
                     if not df_ev.empty:
                         for i, row in df_ev.iterrows():
                             c_titre, c_btn = st.columns([4, 1])
-                            
                             try:
                                 d_start = datetime.fromisoformat(row['Start'])
                                 date_str = d_start.strftime("%d/%m à %H:%M")
@@ -377,12 +374,11 @@ def dashboard_page(sh):
                             st.divider()
                     else:
                         st.info("Aucun événement personnel.")
-                except Exception as e: # <--- LE CORRECTIF EST ICI (On ignore les erreurs de rerun)
-                    # On affiche l'erreur seulement si ce n'est pas un rechargement
+                except Exception as e:
                     if "rerun" not in str(e).lower():
                          st.warning("Chargement...")
 
-    # --- PARTIE TO-DO ---
+    # --- PARTIE TO-DO (AVEC ÉCHÉANCE) ---
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh and urgent_tasks > 0:
@@ -395,7 +391,13 @@ def dashboard_page(sh):
                         cell = ws_t.find(row['ID'])
                         ws_t.update_cell(cell.row, 4, "Fait")
                         st.rerun()
-                    c_txt.markdown(f"**{row['Task']}**<br><span style='font-size:12px; color:grey'>{row['Subject']}</span>", unsafe_allow_html=True)
+                    
+                    # Récupération de la date avec sécurité
+                    date_display = ""
+                    if "Due_Date" in row and row["Due_Date"]:
+                        date_display = f"📅 {row['Due_Date']}"
+                        
+                    c_txt.markdown(f"**{row['Task']}**<br><span style='font-size:12px; color:grey'>{row['Subject']}</span> <span style='font-size:11px; color:#e11d48; font-weight:bold; float:right'>{date_display}</span>", unsafe_allow_html=True)
         else:
             if not sh:
                 st.info("Reconnecte la BDD pour voir les tâches.")
@@ -492,14 +494,22 @@ def subject_page(sh, subject):
                 else:
                     st.info("Tableau vide.")
 
-    # TAB 3: TACHES
+    # TAB 3: TACHES (MISE À JOUR AVEC DATE)
     with tab3:
         if sh:
             ws_t = sh.worksheet("Tasks")
-            col_in, col_btn = st.columns([3, 1])
-            new_t = col_in.text_input("Nouvelle tâche", key=f"t_{subject}")
-            if col_btn.button("Ajouter", key=f"b_{subject}"):
-                ws_t.append_row([str(uuid.uuid4())[:8], subject, new_t, "À faire", ""])
+            # Modification de la mise en page pour ajouter la date
+            c_task, c_date, c_btn = st.columns([3, 2, 1])
+            
+            new_t = c_task.text_input("Nouvelle tâche", key=f"t_{subject}")
+            new_d = c_date.date_input("Échéance", date.today(), key=f"d_{subject}")
+            
+            # Ajustement pour aligner le bouton avec les champs
+            c_btn.write("") 
+            c_btn.write("")
+            if c_btn.button("Ajouter", key=f"b_{subject}"):
+                # Ajout avec la date à la fin
+                ws_t.append_row([str(uuid.uuid4())[:8], subject, new_t, "À faire", str(new_d)])
                 st.rerun()
             
             recs = ws_t.get_all_records()
@@ -507,10 +517,15 @@ def subject_page(sh, subject):
             if not df.empty:
                 df = df[(df['Subject'] == subject) & (df['Status'] == 'À faire')]
                 for i, r in df.iterrows():
-                    if st.checkbox(r['Task'], key=f"chk_{r['ID']}"):
+                    col_check, col_info = st.columns([1, 10])
+                    if col_check.checkbox("", key=f"chk_{r['ID']}"):
                         cell = ws_t.find(r['ID'])
                         ws_t.update_cell(cell.row, 4, "Fait")
                         st.rerun()
+                    
+                    # Affichage joli avec date
+                    d_display = f"📅 {r['Due_Date']}" if "Due_Date" in r and r["Due_Date"] else ""
+                    col_info.markdown(f"{r['Task']} <span style='color:#e11d48; font-size:0.8em; margin-left:10px;'>{d_display}</span>", unsafe_allow_html=True)
 
 # --- MAIN ---
 if __name__ == "__main__":
