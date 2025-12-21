@@ -517,6 +517,9 @@ def focus_room_page():
                     time.sleep(1)
         st.balloons()
         st.success("Session terminée ! Bravo 🎉")
+        # Dans focus_room_page()
+with st.expander("🎵 Ambiance Sonore"):
+    st.video("https://www.youtube.com/watch?v=jfKfPfyJRdk") # Lofi Girl Stream
 
 # --- MAIN ---
 if __name__ == "__main__":
