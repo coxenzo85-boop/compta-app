@@ -24,6 +24,12 @@ if 'current_view' not in st.session_state: st.session_state.current_view = 'Dash
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False
 if 'pomodoro' not in st.session_state: st.session_state.pomodoro = None
+# Gestion du Timer Persistant
+if 'timer_active' not in st.session_state: st.session_state.timer_active = False
+if 'timer_end_time' not in st.session_state: st.session_state.timer_end_time = None
+if 'timer_subject' not in st.session_state: st.session_state.timer_subject = "Général"
+if 'timer_duration' not in st.session_state: st.session_state.timer_duration = 25
+
 
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
@@ -218,12 +224,20 @@ def get_combined_events(ics_url, sh):
     events = get_ics_events_cached(ics_url)
     if sh:
         try:
-            for r in sh.worksheet("Events").get_all_records():
+            # Récupérer les événements depuis l'onglet "Events" du Google Sheet
+            # Assurez-vous que l'onglet 'Events' existe et contient les colonnes : ID, Title, Start, End, Type
+            recs = sh.worksheet("Events").get_all_records()
+            for r in recs:
                 events.append({
-                    "title": f"📚 {r['Title']}", "start": r['Start'], "end": r['End'],
-                    "backgroundColor": ORANGE_REV, "borderColor": GOLD
+                    "title": f"📚 {r['Title']}", 
+                    "start": r['Start'], 
+                    "end": r['End'],
+                    "backgroundColor": ORANGE_REV,  # Orange pour tes révisions
+                    "borderColor": GOLD
                 })
-        except: pass
+        except Exception as e:
+            # Si l'onglet n'existe pas ou erreur, on continue juste avec l'ICS
+            pass
     return events
 
 # --- FONCTION KPI CARD ---
@@ -383,8 +397,49 @@ def dashboard_page(sh):
     c_left, c_right = st.columns([2, 1])
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
+        # --- RÉINTÉGRATION DE L'AJOUT ET DE LA SUPPRESSION D'ÉVÉNEMENTS ---
         events = get_combined_events(ICS_CALENDAR_URL, sh)
         calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
+        
+        if sh:
+            with st.expander("➕ Ajouter une session de révision"):
+                with st.form("add_event"):
+                    ev_title, c_d, c_h1, c_h2 = st.text_input("Matière/Titre"), st.columns(3)[0], st.columns(3)[1], st.columns(3)[2]
+                    ev_date, ev_start, ev_end = c_d.date_input("Date"), c_h1.time_input("Début", dt_time(18,0)), c_h2.time_input("Fin", dt_time(19,0))
+                    if st.form_submit_button("Ajouter au Calendrier"):
+                        try:
+                            start, end = datetime.combine(ev_date, ev_start).isoformat(), datetime.combine(ev_date, ev_end).isoformat()
+                            # Ajout dans la feuille 'Events'
+                            # Structure attendue : ID | Title | Start | End | Type
+                            sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
+                            st.success("Ajouté !")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur d'ajout : {e}. Vérifie que l'onglet 'Events' existe dans ton Google Sheet.")
+
+            with st.expander("🗑️ Gérer mes événements perso"):
+                try:
+                    # On ne liste que les événements perso (ceux dans le Sheet, pas l'ICS)
+                    df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
+                    if not df_ev.empty:
+                        for i, row in df_ev.iterrows():
+                            c_t, c_b = st.columns([4, 1])
+                            c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
+                            if c_b.button("❌", key=f"del_ev_{row['ID']}"):
+                                try:
+                                    ids = sh.worksheet("Events").col_values(1) # ID est en colonne 1
+                                    idx = ids.index(str(row['ID']).strip()) + 1
+                                    sh.worksheet("Events").delete_rows(idx)
+                                    st.success("Supprimé !")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except: st.error("Introuvable")
+                            st.divider()
+                    else: st.info("Aucun événement personnel ajouté.")
+                except Exception as e:
+                    pass # Silencieux si pas d'onglet Events ou vide
+        # ------------------------------------------------------------------
     
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
@@ -548,8 +603,8 @@ def focus_room_page():
             st.success(f"Session de {st.session_state.timer_subject} terminée ! Bravo 🎉")
             
             # Sauvegarde automatique (si la fonction existe)
-            if 'save_to_history' in globals() and 'sh' in globals() and sh:
-                save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
+            # if 'save_to_history' in globals() and 'sh' in globals() and sh:
+            #    save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
             
             # Réinitialisation
             if st.button("Nouvelle Session"):
@@ -562,6 +617,7 @@ if __name__ == "__main__":
     sh, drive = get_google_services()
     selected_page = sidebar_menu()
     
+    # Synchronisation Navigation : Si la sidebar change, on met à jour la vue
     if selected_page != st.session_state.current_view:
         st.session_state.current_view = selected_page
         st.session_state.selected_subject = None
