@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import google.generativeai as genai
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from pypdf import PdfReader
 from docx import Document
@@ -11,9 +11,16 @@ import uuid
 from streamlit_option_menu import option_menu
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
+from icalendar import Calendar
+from streamlit_calendar import calendar
 
 # --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
+
+# 🔗 TON LIEN EMPLOI DU TEMPS (ICS)
+# Remplace ce lien par celui de ton ENT (Moodle > Calendrier > Exporter > URL)
+ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228" 
 
 # PALETTE DE COULEURS DU DESIGN
 NAVY = "#1A2C42"
@@ -21,7 +28,7 @@ TEAL = "#008080"
 GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 
-# INJECTION CSS (Le coeur du design)
+# INJECTION CSS
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -120,6 +127,36 @@ def get_db_connection():
         return sheet
     except Exception as e:
         return None
+
+# --- CALENDAR UTILS ---
+@st.cache_data(ttl=3600) # Mise à jour toutes les heures max pour ne pas ralentir
+def fetch_ics_events(ics_url):
+    events_list = []
+    try:
+        response = requests.get(ics_url)
+        response.raise_for_status()
+        cal = Calendar.from_ical(response.content)
+        
+        for component in cal.walk('vevent'):
+            # Extraction sécurisée des dates
+            start = component.get('dtstart').dt
+            end = component.get('dtend').dt
+            summary = str(component.get('summary'))
+            
+            # Formatage pour streamlit-calendar
+            events_list.append({
+                "title": summary,
+                "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
+                "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+                "backgroundColor": TEAL,
+                "borderColor": NAVY
+            })
+    except Exception as e:
+        print(f"Erreur ICS: {e}")
+        # Événement factice en cas d'erreur pour ne pas casser l'interface
+        events_list.append({"title": "Erreur Synchro EDT", "start": datetime.now().isoformat(), "end": (datetime.now()+timedelta(hours=1)).isoformat(), "backgroundColor": "#ef4444"})
+        
+    return events_list
 
 # --- IA LOGIC ---
 def extract_text(files):
@@ -235,18 +272,36 @@ def dashboard_page(sh):
     st.write("")
     st.write("")
 
+    # --- SECTION PRINCIPALE ---
     c_left, c_right = st.columns([2, 1])
 
+    # 1. EMPLOI DU TEMPS (Remplacement du diagramme)
     with c_left:
-        st.markdown(f"#### <span style='color:{NAVY}'>📊 Répartition ECTS</span>", unsafe_allow_html=True)
-        labels = ['Finance', 'Juridique', 'Systèmes', 'Pro']
-        values = [14, 12, 15, 16] 
-        colors = [NAVY, '#64748b', GOLD, TEAL]
+        st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
         
-        fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.7, marker=dict(colors=colors))])
-        fig.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
+        # Récupération des événements
+        events = fetch_ics_events(ICS_CALENDAR_URL)
+        
+        # Options du calendrier (Vue Semaine)
+        calendar_options = {
+            "headerToolbar": {
+                "left": "today prev,next",
+                "center": "title",
+                "right": "timeGridWeek,dayGridMonth,listWeek"
+            },
+            "initialView": "timeGridWeek",
+            "slotMinTime": "08:00:00",
+            "slotMaxTime": "20:00:00",
+            "height": "400px",
+        }
+        
+        # Affichage
+        calendar(events=events, options=calendar_options, custom_css="""
+            .fc-event { border-radius: 4px; font-size: 10px; }
+            .fc-toolbar-title { font-size: 14px !important; }
+        """)
 
+    # 2. TO-DO LIST
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh and urgent_tasks > 0:
@@ -320,23 +375,14 @@ def subject_page(sh, subject):
                         time.sleep(1)
                         st.rerun()
             
-            # LISTE DES NOTES AVEC SUPPRESSION PAR LIGNE EXACTE
+            # LISTE DES NOTES
             with c2:
-                # On charge tout sous forme de liste brute pour avoir le numéro de ligne
                 raw_data = ws_g.get_all_values()
-                
-                # Si on a des données (au moins l'en-tête + 1 ligne)
                 if len(raw_data) > 1:
                     header = raw_data[0]
                     rows = raw_data[1:]
-                    
-                    # On crée le DataFrame
                     df = pd.DataFrame(rows, columns=header)
-                    
-                    # On ajoute une colonne "Vraie Ligne Excel" (Index + 2 car Header=1)
                     df['real_row_index'] = [i + 2 for i in range(len(rows))]
-                    
-                    # Filtre matière
                     df_sub = df[df['Subject'] == subject]
                     
                     if not df_sub.empty:
@@ -348,10 +394,9 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                                # BOUTON SUPPRIMER (PAR LIGNE DIRECTE)
+                                # BOUTON SUPPRIMER
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
-                                        # On supprime DIRECTEMENT la ligne connue. Pas de recherche.
                                         row_num = int(row['real_row_index'])
                                         ws_g.delete_rows(row_num)
                                         st.success("✅ Supprimé !")
