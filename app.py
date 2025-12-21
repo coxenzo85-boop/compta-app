@@ -373,10 +373,10 @@ def subject_page(sh, subject):
                                         time.sleep(1)
                                         st.rerun()
                                         
-                                    except gspread.exceptions.CellNotFound:
-                                        st.error(f"ID introuvable : '{row['ID']}'. Vérifie le fichier Sheets.")
+                                    except gspread.CellNotFound:  
+                                        st.error(f"ID introuvable : '{row['ID']}'.")
                                     except Exception as e:
-                                        st.error(f"Erreur technique : {e}")
+                                        st.error(f"Autre erreur : {e}")
                                 # --------------------------------
                     else:
                         st.info("Aucune note pour cette matière.")
