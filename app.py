@@ -357,11 +357,11 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                                # --- BOUTON SUPPRIMER CORRIGÉ ---
+                               # --- BOUTON SUPPRIMER (VERSION UNIVERSELLE) ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
                                         st.toast("⏳ Suppression en cours...")
-                                        id_a_chercher = str(row['ID']) # On force le texte
+                                        id_a_chercher = str(row['ID'])
                                         
                                         # 1. On cherche la cellule
                                         cell = ws_g.find(id_a_chercher)
@@ -372,11 +372,14 @@ def subject_page(sh, subject):
                                         st.success("Supprimé !")
                                         time.sleep(1)
                                         st.rerun()
-                                        
-                                    except gspread.CellNotFound:  
-                                        st.error(f"ID introuvable : '{row['ID']}'.")
+                                    
+                                    # 👇 LE CHANGEMENT EST ICI : On attrape TOUT 👇
                                     except Exception as e:
-                                        st.error(f"Autre erreur : {e}")
+                                        # Si le message d'erreur contient "Not Found", c'est que l'ID n'existe pas
+                                        if "NotFound" in str(type(e).__name__):
+                                            st.error(f"Impossible de trouver la ligne (ID: {row['ID']})")
+                                        else:
+                                            st.error(f"Erreur : {e}")
                                 # --------------------------------
                     else:
                         st.info("Aucune note pour cette matière.")
