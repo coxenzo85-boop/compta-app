@@ -319,31 +319,58 @@ def subject_page(sh, subject):
                 st.markdown(resp)
             st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
 
-    # TAB 2: NOTES
+   # TAB 2: NOTES
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
             ws_g = sh.worksheet("Grades")
             
+            # PARTIE GAUCHE : AJOUTER
             with c1:
                 with st.form("add_n"):
                     st.write("**Ajouter une note**")
                     note = st.number_input("Note /20", 0.0, 20.0, step=0.5)
                     coef = st.number_input("Coef", 0.0, 10.0, value=1.0)
+                    type_eval = st.selectbox("Type", ["CC", "Partiel", "Examen"])
                     if st.form_submit_button("Enregistrer"):
-                        ws_g.append_row([str(uuid.uuid4())[:8], subject, note, coef, "CC"])
-                        st.success("OK")
+                        ws_g.append_row([str(uuid.uuid4())[:8], subject, note, coef, type_eval])
+                        st.success("Sauvegardé !")
                         time.sleep(1)
                         st.rerun()
             
+            # PARTIE DROITE : LISTE + SUPPRESSION
             with c2:
                 recs = ws_g.get_all_records()
                 df = pd.DataFrame(recs)
+                
                 if not df.empty:
-                    df = df[df['Subject'] == subject]
-                    st.dataframe(df[['Grade', 'Coefficient', 'Type']], use_container_width=True, hide_index=True)
+                    # On filtre pour ne garder que la matière actuelle
+                    df_sub = df[df['Subject'] == subject]
+                    
+                    if not df_sub.empty:
+                        st.markdown("##### 📄 Mes notes")
+                        # On affiche chaque note ligne par ligne avec un bouton
+                        for i, row in df_sub.iterrows():
+                            with st.container(border=True):
+                                col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 1])
+                                col_a.markdown(f"**{row['Grade']}/20**")
+                                col_b.caption(f"Coef {row['Coefficient']}")
+                                col_c.caption(row['Type'])
+                                
+                                # LE BOUTON SUPPRIMER EST ICI 👇
+                                if col_d.button("❌", key=f"del_{row['ID']}"):
+                                    try:
+                                        cell = ws_g.find(str(row['ID'])) # Trouve la ligne dans Google Sheet
+                                        ws_g.delete_rows(cell.row)       # Supprime la ligne
+                                        st.success("Supprimé !")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    except:
+                                        st.error("Erreur")
+                    else:
+                        st.info("Aucune note pour cette matière.")
                 else:
-                    st.info("Pas encore de notes.")
+                    st.info("Tableau vide.")
 
     # TAB 3: TACHES
     with tab3:
