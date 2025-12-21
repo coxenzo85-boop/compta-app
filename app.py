@@ -30,7 +30,6 @@ if 'timer_end_time' not in st.session_state: st.session_state.timer_end_time = N
 if 'timer_subject' not in st.session_state: st.session_state.timer_subject = "Général"
 if 'timer_duration' not in st.session_state: st.session_state.timer_duration = 25
 
-
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
 
@@ -224,8 +223,7 @@ def get_combined_events(ics_url, sh):
     events = get_ics_events_cached(ics_url)
     if sh:
         try:
-            # Récupérer les événements depuis l'onglet "Events" du Google Sheet
-            # Assurez-vous que l'onglet 'Events' existe et contient les colonnes : ID, Title, Start, End, Type
+            # Récupérer les événements perso depuis l'onglet "Events" du GSheet
             recs = sh.worksheet("Events").get_all_records()
             for r in recs:
                 events.append({
@@ -235,9 +233,7 @@ def get_combined_events(ics_url, sh):
                     "backgroundColor": ORANGE_REV,  # Orange pour tes révisions
                     "borderColor": GOLD
                 })
-        except Exception as e:
-            # Si l'onglet n'existe pas ou erreur, on continue juste avec l'ICS
-            pass
+        except: pass
     return events
 
 # --- FONCTION KPI CARD ---
@@ -286,13 +282,13 @@ def sidebar_menu():
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
         
-        # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
         options = ["Dashboard", "Mes Cours", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
         except:
             default_ix = 0
 
+        # --- FIX : AJOUT DE "border-radius": "0" POUR SUPPRIMER LES COINS BLANCS ---
         selected = option_menu(
             menu_title=None,
             options=options,
@@ -300,7 +296,7 @@ def sidebar_menu():
             menu_icon="cast",
             default_index=default_ix, 
             styles={
-                "container": {"padding": "0!important", "background-color": NAVY},
+                "container": {"padding": "0!important", "background-color": NAVY, "border-radius": "0"}, 
                 "icon": {"color": "#94a3b8", "font-size": "14px"}, 
                 "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "color": "#e2e8f0"},
                 "nav-link-selected": {"background-color": TEAL, "color": "white", "font-weight": "bold"},
@@ -310,7 +306,6 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
-    # HEADER
     st.markdown(f"### 👋 Dashboard Étudiant")
     st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
 
@@ -321,24 +316,19 @@ def dashboard_page(sh):
         df_sim = load_simulator_data(sh)
         if not df_sim.empty:
             df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-            # Calcul sécurisé
             df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
             valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
             if valid_coefs.any():
                 global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
                 s1_avg_display = f"{global_avg:.2f}/20"
 
-    # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
-    
-    # 1. BLOC MOYENNE
     with c1:
         kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
         if st.button("🧮 Ouvrir le Simulateur de Notes", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
-    # 2. BLOC FOCUS ROOM
     with c2:
         focus_txt = "Prêt à bosser ?"
         if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
@@ -366,7 +356,6 @@ def dashboard_page(sh):
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
             if not edited_df.empty:
-                # Calcul robuste division par 0
                 total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
                 safe_total_coef = total_coef.replace(0, 1)
                 edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
@@ -397,7 +386,7 @@ def dashboard_page(sh):
     c_left, c_right = st.columns([2, 1])
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
-        # --- RÉINTÉGRATION DE L'AJOUT ET DE LA SUPPRESSION D'ÉVÉNEMENTS ---
+        # --- CALENDRIER AVEC AJOUT D'ÉVÉNEMENTS ---
         events = get_combined_events(ICS_CALENDAR_URL, sh)
         calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
@@ -410,17 +399,15 @@ def dashboard_page(sh):
                         try:
                             start, end = datetime.combine(ev_date, ev_start).isoformat(), datetime.combine(ev_date, ev_end).isoformat()
                             # Ajout dans la feuille 'Events'
-                            # Structure attendue : ID | Title | Start | End | Type
                             sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
                             st.success("Ajouté !")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erreur d'ajout : {e}. Vérifie que l'onglet 'Events' existe dans ton Google Sheet.")
+                            st.error(f"Erreur d'ajout : {e}. Vérifie que l'onglet 'Events' existe.")
 
             with st.expander("🗑️ Gérer mes événements perso"):
                 try:
-                    # On ne liste que les événements perso (ceux dans le Sheet, pas l'ICS)
                     df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
                     if not df_ev.empty:
                         for i, row in df_ev.iterrows():
@@ -428,7 +415,7 @@ def dashboard_page(sh):
                             c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
                             if c_b.button("❌", key=f"del_ev_{row['ID']}"):
                                 try:
-                                    ids = sh.worksheet("Events").col_values(1) # ID est en colonne 1
+                                    ids = sh.worksheet("Events").col_values(1) 
                                     idx = ids.index(str(row['ID']).strip()) + 1
                                     sh.worksheet("Events").delete_rows(idx)
                                     st.success("Supprimé !")
@@ -436,10 +423,9 @@ def dashboard_page(sh):
                                     st.rerun()
                                 except: st.error("Introuvable")
                             st.divider()
-                    else: st.info("Aucun événement personnel ajouté.")
+                    else: st.info("Aucun événement personnel.")
                 except Exception as e:
-                    pass # Silencieux si pas d'onglet Events ou vide
-        # ------------------------------------------------------------------
+                    pass
     
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
@@ -477,7 +463,6 @@ def subject_detail_page(sh, drive, subject):
     tab1, tab2 = st.tabs(["📂 Fichiers & NotebookLM", "✅ Tâches"])
     
     with tab1:
-        # 1. BLOC NOTEBOOK LM (LIEN DYNAMIQUE)
         with st.container(border=True):
             c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
             with c_logo: st.markdown("## 🧠")
@@ -485,12 +470,10 @@ def subject_detail_page(sh, drive, subject):
                 st.markdown(f"**Booster de révision NotebookLM**")
                 st.caption(f"Accède au carnet de notes dédié pour *{subject}*.")
             with c_btn:
-                # Récupère le lien spécifique ou le lien par défaut
                 notebook_url = NOTEBOOK_LINKS.get(subject, "https://notebooklm.google.com/")
                 st.link_button("↗ Ouvrir NotebookLM", notebook_url, type="primary", use_container_width=True)
         st.write("")
 
-        # 2. GESTION DRIVE
         if drive:
             fid = get_or_create_subject_folder(drive, subject)
             up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
@@ -534,14 +517,13 @@ def subject_detail_page(sh, drive, subject):
                         d_show = f"📅 {r['Due_Date']}" if "Due_Date" in r and r["Due_Date"] else ""
                         c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
-# --- PAGE 4: FOCUS ROOM (RESTORED & FIXED) ---
+# --- PAGE 4: FOCUS ROOM (APPLE MUSIC & TIMER) ---
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
     st.markdown("Configure ta session. Le timer continuera même si tu changes de menu.")
     
-    # --- INTÉGRATION APPLE MUSIC (Lofi Girl) ---
+    # APPLE MUSIC
     with st.expander("🎵 Ambiance Sonore (Apple Music)", expanded=True):
-        # On utilise une iframe sécurisée pour Apple Music
         embed_code = """
         <iframe allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write" 
         frameborder="0" height="175" style="width:100%;max-width:660px;overflow:hidden;background:transparent;" 
@@ -551,11 +533,9 @@ def focus_room_page():
         """
         components.html(embed_code, height=180)
 
-    # --- LOGIQUE DU TIMER PERSISTANT ---
-    # Si aucun timer n'est actif, on affiche les réglages
+    # TIMER PERSISTANT
     if not st.session_state.get('timer_active'):
         c1, c2, c3, c4 = st.columns(4)
-        # On utilise DEFAULT_S2 ou une liste par défaut si non définie
         liste_matieres = DEFAULT_S2 if 'DEFAULT_S2' in globals() else ["Général", "Compta", "Droit"]
         subj = c1.selectbox("Matière", liste_matieres)
         dur = c2.number_input("Durée (min)", 1, 120, 25)
@@ -563,27 +543,20 @@ def focus_room_page():
         cycles = c4.number_input("Cycles", 1, 10, 4)
         
         if st.button("▶ LANCER LA SESSION", type="primary"):
-            # On enregistre l'heure de FIN prévue (C'est ça qui permet la persistance !)
             st.session_state.timer_active = True
             st.session_state.timer_end_time = datetime.now() + timedelta(minutes=dur)
             st.session_state.timer_subject = subj
             st.session_state.timer_duration = dur
             st.rerun()
             
-    # Si un timer EST actif, on affiche le décompte
     else:
-        # Calcul du temps restant par rapport à maintenant
         now = datetime.now()
         remaining = st.session_state.timer_end_time - now
         
-        # Si temps restant > 0
         if remaining.total_seconds() > 0:
             mins, secs = divmod(int(remaining.total_seconds()), 60)
-            
             st.markdown(f"<p class='timer-label'>💻 FOCUS EN COURS • {st.session_state.timer_subject}</p>", unsafe_allow_html=True)
             st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
-            
-            # Barre de progression
             total_seconds = st.session_state.timer_duration * 60
             elapsed = total_seconds - remaining.total_seconds()
             st.progress(max(0.0, min(1.0, elapsed / total_seconds)))
@@ -592,21 +565,13 @@ def focus_room_page():
                 st.session_state.timer_active = False
                 st.session_state.timer_end_time = None
                 st.rerun()
-            
-            # Rechargement automatique toutes les secondes pour l'effet visuel
             time.sleep(1)
             st.rerun()
-            
         else:
-            # Le temps est écoulé !
             st.balloons()
             st.success(f"Session de {st.session_state.timer_subject} terminée ! Bravo 🎉")
-            
-            # Sauvegarde automatique (si la fonction existe)
-            # if 'save_to_history' in globals() and 'sh' in globals() and sh:
-            #    save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
-            
-            # Réinitialisation
+            # Sauvegarde (optionnel si tu utilises l'historique)
+            # if 'save_to_history' in globals(): save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
             if st.button("Nouvelle Session"):
                 st.session_state.timer_active = False
                 st.session_state.timer_end_time = None
@@ -617,7 +582,6 @@ if __name__ == "__main__":
     sh, drive = get_google_services()
     selected_page = sidebar_menu()
     
-    # Synchronisation Navigation : Si la sidebar change, on met à jour la vue
     if selected_page != st.session_state.current_view:
         st.session_state.current_view = selected_page
         st.session_state.selected_subject = None
