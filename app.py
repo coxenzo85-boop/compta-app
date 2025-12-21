@@ -357,33 +357,37 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                               # --- BOUTON SUPPRIMER (MÉTHODE BULLDOZER) ---
+                               # --- BOUTON SUPPRIMER (MÉTHODE NUCLÉAIRE / TYPE-AGNOSTIC) ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
                                         st.toast("⏳ Suppression en cours...")
                                         
-                                        # 1. On récupère TOUTE la colonne A (les IDs) du fichier
-                                        # Cela nous donne une liste simple : ['ID', 'a1b2', 'c3d4', ...]
-                                        all_ids = ws_g.col_values(1)
-                                        
+                                        # 1. On nettoie l'ID qu'on cherche (on le force en texte propre)
                                         target_id = str(row['ID']).strip()
                                         
-                                        # 2. On cherche la position de notre ID dans cette liste
-                                        # (Si l'ID est introuvable, Python va lancer une erreur ValueError)
-                                        try:
-                                            # On ajoute +1 car Google Sheets commence à la ligne 1, pas 0
-                                            row_index = all_ids.index(target_id) + 1
-                                            
-                                            # 3. On supprime la ligne correspondante
-                                            ws_g.delete_rows(row_index)
-                                            
+                                        # 2. On récupère toute la colonne A
+                                        all_ids = ws_g.col_values(1)
+                                        
+                                        # 3. On cherche manuellement en convertissant tout en texte
+                                        row_to_delete = -1
+                                        
+                                        # On parcourt chaque ligne pour comparer "Texte contre Texte"
+                                        for index, value in enumerate(all_ids):
+                                            # On force la valeur du fichier en texte pour comparer
+                                            if str(value).strip() == target_id:
+                                                # Bingo ! On a trouvé l'index (0, 1, 2...)
+                                                # Google Sheets commence à 1, donc on ajoute +1
+                                                row_to_delete = index + 1
+                                                break
+                                        
+                                        # 4. Action
+                                        if row_to_delete != -1:
+                                            ws_g.delete_rows(row_to_delete)
                                             st.success("Supprimé !")
                                             time.sleep(1)
                                             st.rerun()
-                                            
-                                        except ValueError:
-                                            # Si on arrive ici, c'est que l'ID n'est vraiment pas dans la colonne A
-                                            st.error(f"L'ID '{target_id}' n'est pas dans la colonne A du fichier.")
+                                        else:
+                                            st.error(f"ID '{target_id}' introuvable (Problème de format).")
                                             
                                     except Exception as e:
                                         st.error(f"Erreur technique : {e}")
