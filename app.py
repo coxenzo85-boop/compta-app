@@ -357,27 +357,36 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                               # --- BOUTON SUPPRIMER (VERSION BLINDÉE) ---
+                               # --- BOUTON SUPPRIMER (MÉTHODE BULLDOZER) ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
                                         st.toast("⏳ Suppression en cours...")
-                                        id_a_chercher = str(row['ID']).strip() # .strip() enlève les espaces invisibles
                                         
-                                        # 1. On cherche la cellule
-                                        cell = ws_g.find(id_a_chercher)
+                                        # 1. On récupère TOUTE la colonne A (les IDs) du fichier
+                                        # Cela nous donne une liste simple : ['ID', 'a1b2', 'c3d4', ...]
+                                        all_ids = ws_g.col_values(1)
                                         
-                                        # 2. VÉRIFICATION DE SÉCURITÉ
-                                        if cell is None:
-                                            st.warning("Cette note semble déjà supprimée ou introuvable. Actualise la page.")
-                                        else:
-                                            # 3. On supprime la ligne si on l'a trouvée
-                                            ws_g.delete_rows(cell.row)
+                                        target_id = str(row['ID']).strip()
+                                        
+                                        # 2. On cherche la position de notre ID dans cette liste
+                                        # (Si l'ID est introuvable, Python va lancer une erreur ValueError)
+                                        try:
+                                            # On ajoute +1 car Google Sheets commence à la ligne 1, pas 0
+                                            row_index = all_ids.index(target_id) + 1
+                                            
+                                            # 3. On supprime la ligne correspondante
+                                            ws_g.delete_rows(row_index)
+                                            
                                             st.success("Supprimé !")
                                             time.sleep(1)
                                             st.rerun()
-                                    
+                                            
+                                        except ValueError:
+                                            # Si on arrive ici, c'est que l'ID n'est vraiment pas dans la colonne A
+                                            st.error(f"L'ID '{target_id}' n'est pas dans la colonne A du fichier.")
+                                            
                                     except Exception as e:
-                                        st.error(f"Erreur : {e}")
+                                        st.error(f"Erreur technique : {e}")
                                 # --------------------------------
                     else:
                         st.info("Aucune note pour cette matière.")
