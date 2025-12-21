@@ -116,7 +116,9 @@ SUBJECTS_CONFIG = {
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
-# --- CONNEXION GOOGLE (ROBUSTE) ---
+# --- CONNEXION GOOGLE (AVEC CACHE 🧠) ---
+# Le décorateur ci-dessous empêche la déconnexion intempestive !
+@st.cache_resource 
 def get_db_connection():
     try:
         if "gcp_service_account" not in st.secrets:
@@ -143,7 +145,10 @@ def get_ics_events_cached(ics_url):
             for component in cal.walk('vevent'):
                 start = component.get('dtstart').dt
                 end = component.get('dtend').dt
-                summary = str(component.get('summary'))
+                
+                # Correction du titre "None"
+                raw_summary = component.get('summary')
+                summary = str(raw_summary) if raw_summary else "Cours"
                 
                 start_str = start.isoformat() if hasattr(start, 'isoformat') else str(start)
                 end_str = end.isoformat() if hasattr(end, 'isoformat') else str(end)
@@ -260,8 +265,9 @@ def dashboard_page(sh):
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
     st.write("")
     
+    # Check DB silencieux
     if not sh:
-        st.warning("⚠️ Connexion BDD inactive.")
+        st.warning("⚠️ Connexion BDD inactive. Recharge la page si cela persiste.")
 
     gpa = 0.0
     urgent_tasks = 0
@@ -313,9 +319,8 @@ def dashboard_page(sh):
         
         calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
-        # --- GESTION DES ÉVÉNEMENTS (AJOUT + SUPPRESSION) ---
         if sh:
-            # 1. AJOUT
+            # AJOUT
             with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event"):
                     ev_title = st.text_input("Matière / Titre")
@@ -336,7 +341,7 @@ def dashboard_page(sh):
                         except Exception as e:
                             st.error(f"Erreur : {e}")
 
-            # 2. SUPPRESSION (NOUVEAUTÉ)
+            # SUPPRESSION
             with st.expander("🗑️ Gérer / Supprimer mes événements"):
                 try:
                     ws_ev = sh.worksheet("Events")
@@ -345,30 +350,24 @@ def dashboard_page(sh):
                     
                     if not df_ev.empty:
                         for i, row in df_ev.iterrows():
-                            # Mise en page : Titre à gauche, bouton à droite
                             c_titre, c_btn = st.columns([4, 1])
                             
-                            # Affiche titre + date propre
                             try:
                                 d_start = datetime.fromisoformat(row['Start'])
                                 date_str = d_start.strftime("%d/%m à %H:%M")
-                            except:
-                                date_str = row['Start']
+                            except: date_str = row['Start']
                                 
                             c_titre.markdown(f"**{row['Title']}** <span style='font-size:12px; color:grey'>({date_str})</span>", unsafe_allow_html=True)
                             
                             if c_btn.button("❌", key=f"del_ev_{row['ID']}"):
                                 try:
-                                    # Méthode robuste de suppression par ID
                                     target_id = str(row['ID']).strip()
                                     all_ids = ws_ev.col_values(1)
                                     row_to_del = -1
-                                    
                                     for idx, val in enumerate(all_ids):
                                         if str(val).strip() == target_id:
                                             row_to_del = idx + 1
                                             break
-                                    
                                     if row_to_del != -1:
                                         ws_ev.delete_rows(row_to_del)
                                         st.success("Supprimé !")
@@ -378,11 +377,11 @@ def dashboard_page(sh):
                                         st.error("Introuvable.")
                                 except Exception as e:
                                     st.error(f"Erreur : {e}")
-                            st.divider() # Ligne de séparation
+                            st.divider()
                     else:
                         st.info("Aucun événement personnel.")
                 except:
-                    st.warning("Onglet 'Events' inaccessible ou vide.")
+                    st.warning("Onglet 'Events' inaccessible.")
 
     # --- PARTIE TO-DO ---
     with c_right:
