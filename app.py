@@ -14,6 +14,7 @@ import requests
 from icalendar import Calendar
 from streamlit_calendar import calendar
 import io
+import streamlit.components.v1 as components
 
 # --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
@@ -481,45 +482,80 @@ def subject_detail_page(sh, drive, subject):
 # --- PAGE 4: FOCUS ROOM (RESTORED & FIXED) ---
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
-    st.markdown("Configure ta session et ne ferme pas cet onglet.")
+    st.markdown("Configure ta session. Le timer continuera même si tu changes de menu.")
     
-    c1, c2, c3, c4 = st.columns(4)
-    work_min = c1.number_input("Travail (min)", 1, 60, 25)
-    short_break = c2.number_input("Pause courte", 1, 15, 5)
-    long_break = c3.number_input("Pause longue", 5, 30, 15)
-    cycles = c4.number_input("Cycles", 1, 10, 4)
+    # --- INTÉGRATION APPLE MUSIC (Lofi Girl) ---
+    with st.expander("🎵 Ambiance Sonore (Apple Music)", expanded=True):
+        # On utilise une iframe sécurisée pour Apple Music
+        embed_code = """
+        <iframe allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write" 
+        frameborder="0" height="175" style="width:100%;max-width:660px;overflow:hidden;background:transparent;" 
+        sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation" 
+        src="https://embed.music.apple.com/fr/playlist/lofi-girl-beats-to-relax-study-to/pl.bf7a3cbca49644d8a33f09c1285aef5c">
+        </iframe>
+        """
+        components.html(embed_code, height=180)
 
-    col_center, _ = st.columns([1, 2])
-    start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
-
-    placeholder = st.empty()
-
-    if start_btn:
-        total_cycles = cycles
-        for i in range(total_cycles):
-            for remaining in range(work_min * 60, -1, -1):
-                mins, secs = divmod(remaining, 60)
-                with placeholder.container():
-                    st.markdown(f"<p class='timer-label'>💻 CYCLE {i+1}/{total_cycles} • FOCUS</p>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
-                    st.progress((work_min*60 - remaining) / (work_min*60))
-                time.sleep(1)
+    # --- LOGIQUE DU TIMER PERSISTANT ---
+    # Si aucun timer n'est actif, on affiche les réglages
+    if not st.session_state.get('timer_active'):
+        c1, c2, c3, c4 = st.columns(4)
+        # On utilise DEFAULT_S2 ou une liste par défaut si non définie
+        liste_matieres = DEFAULT_S2 if 'DEFAULT_S2' in globals() else ["Général", "Compta", "Droit"]
+        subj = c1.selectbox("Matière", liste_matieres)
+        dur = c2.number_input("Durée (min)", 1, 120, 25)
+        short_break = c3.number_input("Pause courte", 1, 15, 5)
+        cycles = c4.number_input("Cycles", 1, 10, 4)
+        
+        if st.button("▶ LANCER LA SESSION", type="primary"):
+            # On enregistre l'heure de FIN prévue (C'est ça qui permet la persistance !)
+            st.session_state.timer_active = True
+            st.session_state.timer_end_time = datetime.now() + timedelta(minutes=dur)
+            st.session_state.timer_subject = subj
+            st.session_state.timer_duration = dur
+            st.rerun()
             
-            if i < total_cycles - 1:
-                is_long = (i + 1) % 4 == 0 and i != 0
-                break_time = long_break if is_long else short_break
-                label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
-                for remaining in range(break_time * 60, -1, -1):
-                    mins, secs = divmod(remaining, 60)
-                    with placeholder.container():
-                        st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
-                    time.sleep(1)
-        st.balloons()
-        st.success("Session terminée ! Bravo 🎉")
-        # Dans focus_room_page()
-with st.expander("🎵 Ambiance Sonore"):
-    st.video("https://www.youtube.com/watch?v=jfKfPfyJRdk") # Lofi Girl Stream
+    # Si un timer EST actif, on affiche le décompte
+    else:
+        # Calcul du temps restant par rapport à maintenant
+        now = datetime.now()
+        remaining = st.session_state.timer_end_time - now
+        
+        # Si temps restant > 0
+        if remaining.total_seconds() > 0:
+            mins, secs = divmod(int(remaining.total_seconds()), 60)
+            
+            st.markdown(f"<p class='timer-label'>💻 FOCUS EN COURS • {st.session_state.timer_subject}</p>", unsafe_allow_html=True)
+            st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+            
+            # Barre de progression
+            total_seconds = st.session_state.timer_duration * 60
+            elapsed = total_seconds - remaining.total_seconds()
+            st.progress(max(0.0, min(1.0, elapsed / total_seconds)))
+            
+            if st.button("⏹ Abandonner"):
+                st.session_state.timer_active = False
+                st.session_state.timer_end_time = None
+                st.rerun()
+            
+            # Rechargement automatique toutes les secondes pour l'effet visuel
+            time.sleep(1)
+            st.rerun()
+            
+        else:
+            # Le temps est écoulé !
+            st.balloons()
+            st.success(f"Session de {st.session_state.timer_subject} terminée ! Bravo 🎉")
+            
+            # Sauvegarde automatique (si la fonction existe)
+            if 'save_to_history' in globals() and 'sh' in globals() and sh:
+                save_to_history(sh, "Pomodoro", st.session_state.timer_subject, st.session_state.timer_duration)
+            
+            # Réinitialisation
+            if st.button("Nouvelle Session"):
+                st.session_state.timer_active = False
+                st.session_state.timer_end_time = None
+                st.rerun()
 
 # --- MAIN ---
 if __name__ == "__main__":
