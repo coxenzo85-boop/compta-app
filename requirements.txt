@@ -2,9 +2,7 @@ streamlit
 pandas
 gspread
 google-auth
-google-generativeai
-pypdf
-python-docx
+google-api-python-client
 streamlit-option-menu
 plotly
 icalendar
