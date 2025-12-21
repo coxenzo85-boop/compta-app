@@ -357,29 +357,27 @@ def subject_page(sh, subject):
                                 col_b.caption(f"Coef {row['Coefficient']}")
                                 col_c.caption(row['Type'])
                                 
-                               # --- BOUTON SUPPRIMER (VERSION UNIVERSELLE) ---
+                               # --- BOUTON SUPPRIMER (VERSION BLINDÉE) ---
                                 if col_d.button("❌", key=f"del_{row['ID']}"):
                                     try:
                                         st.toast("⏳ Suppression en cours...")
-                                        id_a_chercher = str(row['ID'])
+                                        id_a_chercher = str(row['ID']).strip() # .strip() enlève les espaces invisibles
                                         
                                         # 1. On cherche la cellule
                                         cell = ws_g.find(id_a_chercher)
                                         
-                                        # 2. On supprime la ligne
-                                        ws_g.delete_rows(cell.row)
-                                        
-                                        st.success("Supprimé !")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    
-                                    # 👇 LE CHANGEMENT EST ICI : On attrape TOUT 👇
-                                    except Exception as e:
-                                        # Si le message d'erreur contient "Not Found", c'est que l'ID n'existe pas
-                                        if "NotFound" in str(type(e).__name__):
-                                            st.error(f"Impossible de trouver la ligne (ID: {row['ID']})")
+                                        # 2. VÉRIFICATION DE SÉCURITÉ
+                                        if cell is None:
+                                            st.warning("Cette note semble déjà supprimée ou introuvable. Actualise la page.")
                                         else:
-                                            st.error(f"Erreur : {e}")
+                                            # 3. On supprime la ligne si on l'a trouvée
+                                            ws_g.delete_rows(cell.row)
+                                            st.success("Supprimé !")
+                                            time.sleep(1)
+                                            st.rerun()
+                                    
+                                    except Exception as e:
+                                        st.error(f"Erreur : {e}")
                                 # --------------------------------
                     else:
                         st.info("Aucune note pour cette matière.")
