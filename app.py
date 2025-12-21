@@ -18,7 +18,7 @@ from streamlit_calendar import calendar
 # --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
-# 🔗 TON NOUVEAU LIEN EMPLOI DU TEMPS (NANTES)
+# 🔗 TON LIEN EMPLOI DU TEMPS (NANTES)
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
 
 # PALETTE DE COULEURS
@@ -129,18 +129,15 @@ def get_db_connection():
         sheet = client.open("L3_Compta_Database")
         return sheet
     except Exception as e:
-        # On ne bloque pas l'appli, on renvoie juste None
         print(f"Erreur DB: {e}") 
         return None
 
-# --- CALENDAR ENGINE (AVEC CACHE POUR ÉVITER LE RECHARGEMENT) ---
-
-# 1. Cette partie est mise en cache (1 heure) : Elle ne recharge pas la page !
+# --- CALENDAR ENGINE ---
 @st.cache_data(ttl=3600, show_spinner=False) 
 def get_ics_events_cached(ics_url):
     ics_events = []
     try:
-        response = requests.get(ics_url, timeout=10) # Timeout pour éviter le blocage
+        response = requests.get(ics_url, timeout=10)
         if response.status_code == 200:
             cal = Calendar.from_ical(response.content)
             for component in cal.walk('vevent'):
@@ -148,7 +145,6 @@ def get_ics_events_cached(ics_url):
                 end = component.get('dtend').dt
                 summary = str(component.get('summary'))
                 
-                # Gestion timezone (parfois complexe avec ICS)
                 start_str = start.isoformat() if hasattr(start, 'isoformat') else str(start)
                 end_str = end.isoformat() if hasattr(end, 'isoformat') else str(end)
 
@@ -156,19 +152,15 @@ def get_ics_events_cached(ics_url):
                     "title": summary,
                     "start": start_str,
                     "end": end_str,
-                    "backgroundColor": TEAL, # Couleur Cours
+                    "backgroundColor": TEAL,
                     "borderColor": NAVY
                 })
     except Exception as e:
         print(f"Erreur ICS: {e}")
     return ics_events
 
-# 2. Cette fonction assemble tout (Cache + Google Sheet en direct)
 def get_combined_events(ics_url, sh):
-    # A. Récupère le cache ICS
     final_events = get_ics_events_cached(ics_url)
-    
-    # B. Récupère Google Sheet (Révisions Perso) - Si dispo
     if sh:
         try:
             ws_ev = sh.worksheet("Events")
@@ -182,8 +174,7 @@ def get_combined_events(ics_url, sh):
                     "borderColor": GOLD
                 })
         except:
-            pass # Ignore si l'onglet Events n'existe pas encore
-            
+            pass
     return final_events
 
 # --- IA LOGIC ---
@@ -269,9 +260,8 @@ def dashboard_page(sh):
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
     st.write("")
     
-    # Indicateur discret de connexion DB
     if not sh:
-        st.warning("⚠️ Connexion Google Sheets inactive. Le dashboard fonctionne en mode 'Lecture seule' pour l'emploi du temps.")
+        st.warning("⚠️ Connexion BDD inactive.")
 
     gpa = 0.0
     urgent_tasks = 0
@@ -309,7 +299,6 @@ def dashboard_page(sh):
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
         
-        # Récupération des événements (Cache + BDD)
         events = get_combined_events(ICS_CALENDAR_URL, sh)
         
         calendar_options = {
@@ -324,9 +313,10 @@ def dashboard_page(sh):
         
         calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
-        # Formulaire d'ajout (visible seulement si DB connectée)
+        # --- GESTION DES ÉVÉNEMENTS (AJOUT + SUPPRESSION) ---
         if sh:
-            with st.expander("➕ Ajouter une session de révision (Perso)"):
+            # 1. AJOUT
+            with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event"):
                     ev_title = st.text_input("Matière / Titre")
                     c_d, c_h1, c_h2 = st.columns(3)
@@ -334,18 +324,65 @@ def dashboard_page(sh):
                     ev_start = c_h1.time_input("Début", dt_time(18, 0))
                     ev_end = c_h2.time_input("Fin", dt_time(19, 0))
                     
-                    if st.form_submit_button("Ajouter au calendrier"):
+                    if st.form_submit_button("Ajouter"):
                         try:
                             start_iso = datetime.combine(ev_date, ev_start).isoformat()
                             end_iso = datetime.combine(ev_date, ev_end).isoformat()
-                            
                             ws_ev = sh.worksheet("Events")
                             ws_ev.append_row([str(uuid.uuid4())[:8], ev_title, start_iso, end_iso, "Revision"])
                             st.success("Ajouté !")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erreur : Vérifie que l'onglet 'Events' existe dans Sheets. {e}")
+                            st.error(f"Erreur : {e}")
+
+            # 2. SUPPRESSION (NOUVEAUTÉ)
+            with st.expander("🗑️ Gérer / Supprimer mes événements"):
+                try:
+                    ws_ev = sh.worksheet("Events")
+                    rows = ws_ev.get_all_records()
+                    df_ev = pd.DataFrame(rows)
+                    
+                    if not df_ev.empty:
+                        for i, row in df_ev.iterrows():
+                            # Mise en page : Titre à gauche, bouton à droite
+                            c_titre, c_btn = st.columns([4, 1])
+                            
+                            # Affiche titre + date propre
+                            try:
+                                d_start = datetime.fromisoformat(row['Start'])
+                                date_str = d_start.strftime("%d/%m à %H:%M")
+                            except:
+                                date_str = row['Start']
+                                
+                            c_titre.markdown(f"**{row['Title']}** <span style='font-size:12px; color:grey'>({date_str})</span>", unsafe_allow_html=True)
+                            
+                            if c_btn.button("❌", key=f"del_ev_{row['ID']}"):
+                                try:
+                                    # Méthode robuste de suppression par ID
+                                    target_id = str(row['ID']).strip()
+                                    all_ids = ws_ev.col_values(1)
+                                    row_to_del = -1
+                                    
+                                    for idx, val in enumerate(all_ids):
+                                        if str(val).strip() == target_id:
+                                            row_to_del = idx + 1
+                                            break
+                                    
+                                    if row_to_del != -1:
+                                        ws_ev.delete_rows(row_to_del)
+                                        st.success("Supprimé !")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Introuvable.")
+                                except Exception as e:
+                                    st.error(f"Erreur : {e}")
+                            st.divider() # Ligne de séparation
+                    else:
+                        st.info("Aucun événement personnel.")
+                except:
+                    st.warning("Onglet 'Events' inaccessible ou vide.")
 
     # --- PARTIE TO-DO ---
     with c_right:
