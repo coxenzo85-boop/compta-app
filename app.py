@@ -18,7 +18,7 @@ import io
 # --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
-# --- GESTION DE L'ÉTAT ---
+# --- GESTION DE L'ÉTAT (SESSION STATE) ---
 if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False
@@ -111,6 +111,23 @@ st.markdown(f"""
         box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         margin: 20px 0;
     }}
+    
+    /* Cartes Fichiers Drive */
+    .file-card {{
+        background-color: white;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: transform 0.2s;
+    }}
+    .file-card:hover {{
+        border-color: {TEAL};
+        transform: translateX(5px);
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -123,7 +140,7 @@ DEFAULT_S2 = [
     "Diagnostic Financier", "Compta Approfondie 2", "Modélisation des Coûts", 
     "Int. Financial Accounting", "Diagnostic Général", "Droit des Sociétés 2", 
     "Droit du Crédit", "Droit Pénal Affaires", "Organisation et SI", "Info. Décisionnelle", 
-    "Anglais S2", "Projet Pro"
+    "Anglais", "Projet Professionnel"
 ]
 
 SUBJECTS_CONFIG = {s: {"cat": "Cours", "color": NAVY, "icon": "book"} for s in DEFAULT_S1 + DEFAULT_S2}
@@ -241,7 +258,6 @@ def sidebar_menu():
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
         
-        # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
         options = ["Dashboard", "Mes Cours", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
@@ -253,7 +269,7 @@ def sidebar_menu():
             options=options,
             icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
             menu_icon="cast",
-            default_index=default_ix, # Synchronisation ici
+            default_index=default_ix, 
             styles={
                 "container": {"padding": "0!important", "background-color": NAVY},
                 "icon": {"color": "#94a3b8", "font-size": "14px"}, 
@@ -276,7 +292,6 @@ def dashboard_page(sh):
         df_sim = load_simulator_data(sh)
         if not df_sim.empty:
             df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-            # Calcul sécurisé : Si Coef CC = 0, il est ignoré
             df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
             valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
             if valid_coefs.any():
@@ -293,12 +308,11 @@ def dashboard_page(sh):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
-    # 2. BLOC FOCUS ROOM (LIEN CORRIGÉ)
+    # 2. BLOC FOCUS ROOM
     with c2:
         focus_txt = "Prêt à bosser ?"
         if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
         kpi_card("Focus Room", focus_txt, "Productivité Maximale", GOLD, "⏳")
-        # Le bouton met à jour la vue et force le rechargement pour que la sidebar suive
         if st.button("🚀 Accéder à la Focus Room", use_container_width=True):
             st.session_state.current_view = "Focus Room"
             st.rerun()
@@ -322,7 +336,6 @@ def dashboard_page(sh):
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
             if not edited_df.empty:
-                # Calcul robuste division par 0
                 total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
                 safe_total_coef = total_coef.replace(0, 1)
                 edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
@@ -361,7 +374,6 @@ def dashboard_page(sh):
         if sh:
             try:
                 tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
-                # Filtrer les tâches "À faire"
                 todo_tasks = tasks[tasks['Status'] == 'À faire'] if not tasks.empty else pd.DataFrame()
                 
                 if not todo_tasks.empty:
@@ -373,7 +385,6 @@ def dashboard_page(sh):
                                 sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
                             c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span>", unsafe_allow_html=True)
                 else:
-                    # MESSAGE QUAND VIDE
                     st.success("🎉 Rien à faire ! Profite de ta pause.")
             except: st.info("Aucune tâche.")
 
@@ -387,21 +398,66 @@ def courses_grid_page():
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
                 st.session_state.selected_subject = subject; st.rerun()
 
+# --- PAGE 3: DÉTAIL MATIÈRE (AVEC NOTEBOOKLM) ---
 def subject_detail_page(sh, drive, subject):
     if st.button("← Retour"): st.session_state.selected_subject = None; st.rerun()
     st.title(subject)
-    tab1, tab2 = st.tabs(["📂 Fichiers", "✅ Tâches"])
+    tab1, tab2 = st.tabs(["📂 Fichiers & NotebookLM", "✅ Tâches"])
+    
     with tab1:
+        # BLOC NOTEBOOK LM
+        with st.container(border=True):
+            c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
+            with c_logo: st.markdown("## 🧠")
+            with c_txt:
+                st.markdown(f"**Booster de révision NotebookLM**")
+                st.caption(f"Transforme les documents du dossier *'{subject}'* en podcast, quiz et résumés.")
+            with c_btn:
+                st.link_button("↗ Ouvrir NotebookLM", "https://notebooklm.google.com/", type="primary", use_container_width=True)
+        st.write("")
+
         if drive:
             fid = get_or_create_subject_folder(drive, subject)
-            up = st.file_uploader("Ajouter fichier", key="up")
-            if up and st.button("Envoyer"): upload_file_to_drive(drive, up, fid); st.success("OK"); st.rerun()
-            for f in list_drive_files(drive, fid):
-                st.markdown(f"<div style='padding:10px; border:1px solid #ddd; margin:5px; border-radius:5px'><a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{NAVY}'>📄 {f['name']}</a></div>", unsafe_allow_html=True)
+            up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
+            if up and st.button("Envoyer sur Drive"): 
+                upload_file_to_drive(drive, up, fid)
+                st.success("Envoyé !"); time.sleep(1); st.rerun()
+            
+            st.markdown("### 📄 Mes documents")
+            files = list_drive_files(drive, fid)
+            if files:
+                for f in files:
+                    st.markdown(f"""
+                    <div class="file-card">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <img src='{f.get('iconLink')}' width='20'>
+                            <span style='font-weight:bold; color:{NAVY};'>{f['name']}</span>
+                        </div>
+                        <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Aucun fichier. Upload tes cours pour commencer !")
+        else:
+            st.warning("Connexion Drive inactive.")
+
     with tab2:
         if sh:
             t, d = st.columns([3, 1]); nt = t.text_input("Tâche"); nd = d.date_input("Date")
             if st.button("Ajouter"): sh.worksheet("Tasks").append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
+            
+            recs = sh.worksheet("Tasks").get_all_records()
+            if recs:
+                df = pd.DataFrame(recs)
+                if 'Subject' in df.columns and 'Status' in df.columns:
+                    df = df[(df['Subject'] == subject) & (df['Status'] == 'À faire')]
+                    for i, r in df.iterrows():
+                        c_chk, c_info = st.columns([1, 10])
+                        if c_chk.checkbox("", key=f"c_{r['ID']}"):
+                            cell = sh.worksheet("Tasks").find(r['ID'])
+                            sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
+                        d_show = f"📅 {r['Due_Date']}" if "Due_Date" in r and r["Due_Date"] else ""
+                        c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
 # --- PAGE 4: FOCUS ROOM (RESTORED & FIXED) ---
 def focus_room_page():
@@ -422,7 +478,6 @@ def focus_room_page():
     if start_btn:
         total_cycles = cycles
         for i in range(total_cycles):
-            # TRAVAIL
             for remaining in range(work_min * 60, -1, -1):
                 mins, secs = divmod(remaining, 60)
                 with placeholder.container():
@@ -431,19 +486,16 @@ def focus_room_page():
                     st.progress((work_min*60 - remaining) / (work_min*60))
                 time.sleep(1)
             
-            # PAUSE (Courte ou Longue)
-            is_long = (i + 1) % 4 == 0 and i != 0
-            break_time = long_break if is_long else short_break
-            label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
-            
-            if i < total_cycles - 1: # Pas de pause après le dernier cycle
+            if i < total_cycles - 1:
+                is_long = (i + 1) % 4 == 0 and i != 0
+                break_time = long_break if is_long else short_break
+                label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
                 for remaining in range(break_time * 60, -1, -1):
                     mins, secs = divmod(remaining, 60)
                     with placeholder.container():
                         st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
                         st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
                     time.sleep(1)
-        
         st.balloons()
         st.success("Session terminée ! Bravo 🎉")
 
@@ -452,7 +504,6 @@ if __name__ == "__main__":
     sh, drive = get_google_services()
     selected_page = sidebar_menu()
     
-    # Synchronisation Navigation : Si la sidebar change, on met à jour la vue
     if selected_page != st.session_state.current_view:
         st.session_state.current_view = selected_page
         st.session_state.selected_subject = None
