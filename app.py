@@ -2,11 +2,10 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import google.generativeai as genai
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from datetime import datetime, timedelta, date, time as dt_time
 import time
-from pypdf import PdfReader
-from docx import Document
 import uuid
 from streamlit_option_menu import option_menu
 import plotly.express as px
@@ -14,6 +13,7 @@ import plotly.graph_objects as go
 import requests
 from icalendar import Calendar
 from streamlit_calendar import calendar
+import io
 
 # --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
@@ -28,7 +28,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# INJECTION CSS (INTERACTIVITÉ TOTALE)
+# INJECTION CSS
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -44,132 +44,53 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    /* --- 1. SIDEBAR INTERACTIVE --- */
+    /* Sidebar */
     [data-testid="stSidebar"] {{ background-color: {NAVY}; }}
     [data-testid="stSidebar"] h1 {{ color: white !important; }}
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
-    
-    /* Animation des liens du menu */
-    .nav-link {{
-        transition: all 0.3s ease !important;
-    }}
-    .nav-link:hover {{
-        background-color: rgba(255, 255, 255, 0.1) !important;
-        transform: translateX(8px) !important; /* Décalage vers la droite */
-        color: {GOLD} !important;
-    }}
 
-    /* --- 2. TABS INTERACTIFS (IA, Notes, Tâches) --- */
-    button[data-baseweb="tab"] {{
-        transition: all 0.3s ease;
-        border-radius: 5px;
-        margin: 0 2px;
-    }}
-    button[data-baseweb="tab"]:hover {{
-        background-color: rgba(0, 128, 128, 0.1); /* Teal très clair */
-        color: {TEAL};
-        font-weight: bold;
-        transform: translateY(-2px);
-    }}
-    /* Onglet actif */
-    button[data-baseweb="tab"][aria-selected="true"] {{
-        background-color: {TEAL} !important;
-        color: white !important;
-    }}
-
-    /* --- 3. KPI CARDS (Hover) --- */
+    /* KPI Cards */
     .kpi-card {{
         background-color: white;
         padding: 20px;
         border-radius: 12px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         border-left: 5px solid {NAVY};
-        transition: all 0.3s ease;
-        cursor: default;
-    }}
-    .kpi-card:hover {{
-        transform: translateY(-5px) scale(1.02);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
-        border-left-color: {TEAL};
-    }}
-
-    /* --- 4. CARTES DE COURS (Magie Cliquable) --- */
-    
-    .course-card-bg {{
-        background-color: white;
-        border-radius: 15px;
-        padding: 20px;
-        height: 180px; 
-        border: 1px solid #e2e8f0;
-        border-left: 6px solid {NAVY};
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        position: relative; /* Important pour l'alignement */
-        z-index: 0;
-    }}
-
-    /* LE BOUTON INVISIBLE MAIS RÉACTIF */
-    /* On cible le bouton qui a la classe 'click-cover' (injectée via le hack CSS plus bas) */
-    div.stButton > button.click-cover {{
-        position: absolute;
-        top: -190px;
-        left: 0;
-        width: 100%;
-        height: 200px;
-        opacity: 0; /* Invisible par défaut */
-        z-index: 2;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        background-color: {TEAL}; /* Couleur de fond au survol */
-        border: none;
-    }}
-
-    /* L'effet au survol du bouton invisible */
-    div.stButton > button.click-cover:hover {{
-        opacity: 0.05; /* On le rend légèrement visible (voile coloré) */
-        transform: scale(1.03); /* On fait grossir légèrement la zone */
-        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
     }}
     
-    /* Quand on survole le bouton, on veut que le HTML en dessous semble réagir */
-    /* Note: En CSS pur, on ne peut pas affecter le frère précédent (la carte HTML) en survolant le frère suivant (le bouton).
-       C'est pourquoi on utilise l'opacity sur le bouton lui-même pour créer le voile coloré. */
-
-    /* Boutons classiques */
+    /* Boutons */
     .stButton>button {{
         background-color: {TEAL};
         color: white;
         border-radius: 8px;
         border: none;
         font-weight: bold;
-        transition: all 0.3s;
-    }}
-    .stButton>button:not(.click-cover):hover {{
-        background-color: {NAVY};
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        transform: translateY(-2px);
     }}
 
-    /* TIMER */
-    .timer-display {{
-        font-size: 80px;
-        font-weight: bold;
-        color: {NAVY};
-        text-align: center;
-        font-family: 'Courier New', monospace;
+    /* Cartes Fichiers Drive */
+    .file-card {{
         background-color: white;
-        padding: 20px;
-        border-radius: 20px;
-        border: 4px solid {GOLD};
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        margin: 20px 0;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: transform 0.2s;
     }}
-    .timer-label {{
-        text-align: center; 
-        font-size: 24px; 
-        font-weight: bold; 
+    .file-card:hover {{
+        border-color: {TEAL};
+        transform: translateX(5px);
+    }}
+    .file-link {{
+        text-decoration: none;
+        color: {NAVY};
+        font-weight: bold;
+        font-size: 14px;
+    }}
+    .file-link:hover {{
         color: {TEAL};
-        text-transform: uppercase;
-        letter-spacing: 2px;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -196,19 +117,66 @@ SUBJECTS = list(SUBJECTS_CONFIG.keys())
 if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
 if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 
-# --- CONNEXIONS & UTILS ---
+# --- CONNEXIONS GOOGLE (SHEETS & DRIVE) ---
 @st.cache_resource 
-def get_db_connection():
+def get_google_services():
     try:
-        if "gcp_service_account" not in st.secrets: return None
-        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scope)
+        if "gcp_service_account" not in st.secrets: return None, None
+        
+        # Scopes pour Sheets ET Drive
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        
+        creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scopes)
+        
+        # Service Sheets
         client = gspread.authorize(creds)
-        return client.open("L3_Compta_Database")
+        sheet = client.open("L3_Compta_Database")
+        
+        # Service Drive
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        return sheet, drive_service
     except Exception as e:
-        print(f"Erreur DB: {e}") 
-        return None
+        print(f"Erreur Connexion Google: {e}") 
+        return None, None
 
+# --- FONCTIONS DRIVE ---
+def get_or_create_subject_folder(drive_service, subject_name):
+    """Cherche le dossier de la matière, sinon le crée dans le dossier racine"""
+    root_id = st.secrets["general"]["drive_root_folder_id"]
+    
+    # Cherche si le dossier existe déjà dans le root
+    query = f"mimeType='application/vnd.google-apps.folder' and name='{subject_name}' and '{root_id}' in parents and trashed=false"
+    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    items = results.get('files', [])
+    
+    if items:
+        return items[0]['id']
+    else:
+        # Crée le dossier
+        file_metadata = {
+            'name': subject_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [root_id]
+        }
+        file = drive_service.files().create(body=file_metadata, fields='id').execute()
+        return file.get('id')
+
+def list_drive_files(drive_service, folder_id):
+    query = f"'{folder_id}' in parents and trashed=false"
+    results = drive_service.files().list(q=query, fields="files(id, name, webViewLink, iconLink)").execute()
+    return results.get('files', [])
+
+def upload_file_to_drive(drive_service, uploaded_file, folder_id):
+    file_metadata = {'name': uploaded_file.name, 'parents': [folder_id]}
+    media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
+    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    return file
+
+# --- CALENDAR UTILS ---
 @st.cache_data(ttl=3600, show_spinner=False) 
 def get_ics_events_cached(ics_url):
     ics_events = []
@@ -240,24 +208,6 @@ def get_combined_events(ics_url, sh):
         except: pass
     return events
 
-def extract_text(files):
-    text = ""
-    for f in files:
-        try:
-            if f.type == "application/pdf": text += PdfReader(f).pages[0].extract_text() + "\n"
-            elif "word" in f.type:
-                doc = Document(f)
-                for p in doc.paragraphs: text += p.text + "\n"
-        except: pass
-    return text
-
-def get_gemini_response(prompt, context):
-    try:
-        genai.configure(api_key=st.secrets["gemini"]["api_key"])
-        model = genai.GenerativeModel('gemini-pro')
-        return model.generate_content(f"Expert L3 Compta. Contexte: {context}. Question: {prompt}").text
-    except Exception as e: return f"Erreur IA: {e}"
-
 # --- COMPOSANTS UI ---
 def kpi_card(title, value, subtitle, color, icon):
     st.markdown(f"""
@@ -275,7 +225,7 @@ def kpi_card(title, value, subtitle, color, icon):
     </div>
     """, unsafe_allow_html=True)
 
-# --- NAVIGATION SIDEBAR ---
+# --- NAVIGATION ---
 def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
@@ -379,7 +329,7 @@ def dashboard_page(sh):
                     c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
         else: st.info("Rien à faire !")
 
-# --- PAGE 2: GRILLE DES COURS (CLIQUABLE + HOVER EFFECT) ---
+# --- PAGE 2: GRILLE DES COURS ---
 def courses_grid_page():
     st.markdown(f"### 📚 Mes Modules")
     st.markdown("Accès rapide à tes cours.")
@@ -392,12 +342,11 @@ def courses_grid_page():
         col = cols[index % 3]
         
         with col:
-            # 1. VISUEL (HTML)
             st.markdown(f"""
-            <div class="course-card-bg">
+            <div style="background-color: white; border-radius: 15px; padding: 20px; height: 180px; border: 1px solid #e2e8f0; border-left: 6px solid {NAVY}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; z-index: 0;">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <span style="background-color: #f1f5f9; color: {NAVY}; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">{conf['cat']}</span>
-                    <div class="icon-box" style="width:30px; height:30px; border-radius:50%; background-color: {CLOUD}; display:flex; align-items:center; justify-content:center; color: {NAVY}; transition: all 0.3s ease;">
+                    <div class="icon-box" style="width:30px; height:30px; border-radius:50%; background-color: {CLOUD}; display:flex; align-items:center; justify-content:center; color: {NAVY};">
                          <i class="bi bi-{conf.get('icon', 'book')}"></i>
                     </div>
                 </div>
@@ -406,35 +355,13 @@ def courses_grid_page():
             </div>
             """, unsafe_allow_html=True)
             
-            # 2. BOUTON (Invisible Overlay)
-            # On utilise une clé CSS unique pour cibler ce bouton spécifiquement
-            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
+            # Bouton d'action
+            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
                 st.session_state.selected_subject = subject
                 st.rerun()
-            
-            # 3. CSS HACK pour transformer ce bouton en "Cover" (Couverture)
-            # On cible le n-ième bouton de la colonne
-            st.markdown(f"""
-            <style>
-            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{
-                /* On applique la classe 'click-cover' manuellement via le style inline */
-                position: absolute !important;
-                top: -190px !important;
-                left: 0 !important;
-                width: 100% !important;
-                height: 200px !important;
-                opacity: 0 !important;
-                z-index: 2 !important;
-            }}
-            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{
-                opacity: 0.05 !important; /* Petit voile au survol */
-                background-color: {TEAL} !important;
-            }}
-            </style>
-            """, unsafe_allow_html=True)
 
-# --- PAGE 3: DÉTAIL MATIÈRE ---
-def subject_detail_page(sh, subject):
+# --- PAGE 3: DÉTAIL MATIÈRE (AVEC DRIVE) ---
+def subject_detail_page(sh, drive, subject):
     if st.button("← Retour à la grille"):
         st.session_state.selected_subject = None
         st.rerun()
@@ -447,27 +374,54 @@ def subject_detail_page(sh, subject):
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["🤖 Tuteur IA", "📝 Notes & Simu", "✅ Tâches"])
+    # REMPLACEMENT IA PAR DRIVE
+    tab1, tab2, tab3 = st.tabs(["📂 Fichiers & Cours", "📝 Notes & Simu", "✅ Tâches"])
 
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("**📂 Documents**")
-        files = st.file_uploader("Drop PDF/Word", accept_multiple_files=True, key=subject)
-        context = extract_text(files) if files else ""
-        if files: st.success(f"{len(files)} docs chargés")
-
+    # TAB 1 : GOOGLE DRIVE
     with tab1:
-        if "msgs" not in st.session_state: st.session_state.msgs = {}
-        if subject not in st.session_state.msgs: st.session_state.msgs[subject] = []
-        for m in st.session_state.msgs[subject]:
-            with st.chat_message(m["role"]): st.markdown(m["content"])
-        if p := st.chat_input("Question..."):
-            st.session_state.msgs[subject].append({"role": "user", "content": p})
-            with st.chat_message("user"): st.markdown(p)
-            r = get_gemini_response(p, context) if context else "⚠️ Upload un cours."
-            with st.chat_message("assistant"): st.markdown(r)
-            st.session_state.msgs[subject].append({"role": "assistant", "content": r})
+        st.caption("Espace de stockage synchronisé avec Google Drive.")
+        
+        if drive:
+            # 1. Récupération/Création dossier
+            try:
+                folder_id = get_or_create_subject_folder(drive, subject)
+                
+                # 2. Zone d'Upload
+                uploaded_file = st.file_uploader("Déposer un fichier", key=f"up_{subject}")
+                if uploaded_file is not None:
+                    if st.button("Envoyer sur Drive"):
+                        with st.spinner("Envoi en cours..."):
+                            upload_file_to_drive(drive, uploaded_file, folder_id)
+                        st.success("Fichier envoyé !")
+                        time.sleep(1)
+                        st.rerun()
+                
+                st.markdown("---")
+                
+                # 3. Liste des fichiers
+                files = list_drive_files(drive, folder_id)
+                if files:
+                    for f in files:
+                        icon = f.get('iconLink', '')
+                        st.markdown(f"""
+                        <div class="file-card">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <img src="{icon}" width="20">
+                                <a href="{f['webViewLink']}" target="_blank" class="file-link">{f['name']}</a>
+                            </div>
+                            <span style="font-size:10px; color:grey;">Ouvrir ↗</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("Dossier vide. Ajoute tes premiers cours !")
+                    
+            except Exception as e:
+                st.error(f"Erreur Drive : {e}")
+                st.caption("Vérifie que tu as bien partagé le dossier racine avec l'adresse email du Service Account.")
+        else:
+            st.warning("Service Drive non configuré (vérifie tes secrets).")
 
+    # TAB 2 : NOTES
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
@@ -491,6 +445,7 @@ def subject_detail_page(sh, subject):
                         if cd.button("❌", key=f"d_{r['ID']}"):
                             ws_g.delete_rows(int(r['real_idx'])); st.rerun()
 
+    # TAB 3 : TÂCHES
     with tab3:
         if sh:
             ws_t = sh.worksheet("Tasks")
@@ -512,7 +467,7 @@ def subject_detail_page(sh, subject):
                     d_show = f"📅 {r['Due_Date']}" if r["Due_Date"] else ""
                     c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
-# --- PAGE 4: FOCUS ROOM (POMODORO PRO) ---
+# --- PAGE 4: FOCUS ROOM ---
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
     st.markdown("Configure ta session et ne ferme pas cet onglet.")
@@ -531,7 +486,6 @@ def focus_room_page():
     if start_btn:
         total_cycles = cycles
         for i in range(total_cycles):
-            # TRAVAIL
             for remaining in range(work_min * 60, -1, -1):
                 mins, secs = divmod(remaining, 60)
                 with placeholder.container():
@@ -539,26 +493,21 @@ def focus_room_page():
                     st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
                     st.progress((work_min*60 - remaining) / (work_min*60))
                 time.sleep(1)
-            
-            # PAUSE
             if i < total_cycles - 1:
                 is_long = (i + 1) % 4 == 0
                 break_time = long_break if is_long else short_break
                 label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
-                
                 for remaining in range(break_time * 60, -1, -1):
                     mins, secs = divmod(remaining, 60)
                     with placeholder.container():
                         st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
                         st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
                     time.sleep(1)
-        
-        st.balloons()
-        st.success("Session terminée ! Bravo 🎉")
+        st.balloons(); st.success("Session terminée ! Bravo 🎉")
 
-# --- MAIN LOGIC ---
+# --- MAIN ---
 if __name__ == "__main__":
-    sh = get_db_connection()
+    sh, drive = get_google_services()
     selected_page = sidebar_menu()
     
     if selected_page != st.session_state.current_view:
@@ -568,7 +517,6 @@ if __name__ == "__main__":
 
     if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
-        if st.session_state.selected_subject: subject_detail_page(sh, st.session_state.selected_subject)
+        if st.session_state.selected_subject: subject_detail_page(sh, drive, st.session_state.selected_subject)
         else: courses_grid_page()
-    elif st.session_state.current_view == "Focus Room":
-        focus_room_page()
+    elif st.session_state.current_view == "Focus Room": focus_room_page()
