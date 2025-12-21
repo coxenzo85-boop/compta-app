@@ -18,16 +18,15 @@ from streamlit_calendar import calendar
 # --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
-# 🔗 TON LIEN EMPLOI DU TEMPS (ICS)
-# Remplace ce lien par le tien (Moodle/ENT > Export Agenda)
-ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228" 
+# 🔗 TON NOUVEAU LIEN EMPLOI DU TEMPS (NANTES)
+ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
 
 # PALETTE DE COULEURS
 NAVY = "#1A2C42"
 TEAL = "#008080"
 GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
-ORANGE_REV = "#ea580c" # Couleur pour les révisions
+ORANGE_REV = "#ea580c"
 
 # INJECTION CSS
 st.markdown(f"""
@@ -117,9 +116,12 @@ SUBJECTS_CONFIG = {
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
-# --- CONNEXION GOOGLE ---
+# --- CONNEXION GOOGLE (ROBUSTE) ---
 def get_db_connection():
     try:
+        if "gcp_service_account" not in st.secrets:
+            return None
+            
         scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         credentials_dict = dict(st.secrets["gcp_service_account"])
         creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
@@ -127,48 +129,62 @@ def get_db_connection():
         sheet = client.open("L3_Compta_Database")
         return sheet
     except Exception as e:
+        # On ne bloque pas l'appli, on renvoie juste None
+        print(f"Erreur DB: {e}") 
         return None
 
-# --- CALENDAR ENGINE (FUSION ICS + SHEET) ---
-def fetch_all_events(ics_url, sh):
-    all_events = []
-    
-    # 1. Récupération ICS (Cours officiels)
+# --- CALENDAR ENGINE (AVEC CACHE POUR ÉVITER LE RECHARGEMENT) ---
+
+# 1. Cette partie est mise en cache (1 heure) : Elle ne recharge pas la page !
+@st.cache_data(ttl=3600, show_spinner=False) 
+def get_ics_events_cached(ics_url):
+    ics_events = []
     try:
-        response = requests.get(ics_url)
+        response = requests.get(ics_url, timeout=10) # Timeout pour éviter le blocage
         if response.status_code == 200:
             cal = Calendar.from_ical(response.content)
             for component in cal.walk('vevent'):
                 start = component.get('dtstart').dt
                 end = component.get('dtend').dt
                 summary = str(component.get('summary'))
-                all_events.append({
+                
+                # Gestion timezone (parfois complexe avec ICS)
+                start_str = start.isoformat() if hasattr(start, 'isoformat') else str(start)
+                end_str = end.isoformat() if hasattr(end, 'isoformat') else str(end)
+
+                ics_events.append({
                     "title": summary,
-                    "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
-                    "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+                    "start": start_str,
+                    "end": end_str,
                     "backgroundColor": TEAL, # Couleur Cours
                     "borderColor": NAVY
                 })
-    except:
-        pass # Si l'ICS plante, on continue quand même
+    except Exception as e:
+        print(f"Erreur ICS: {e}")
+    return ics_events
 
-    # 2. Récupération Google Sheet (Révisions Perso)
+# 2. Cette fonction assemble tout (Cache + Google Sheet en direct)
+def get_combined_events(ics_url, sh):
+    # A. Récupère le cache ICS
+    final_events = get_ics_events_cached(ics_url)
+    
+    # B. Récupère Google Sheet (Révisions Perso) - Si dispo
     if sh:
         try:
             ws_ev = sh.worksheet("Events")
             rows = ws_ev.get_all_records()
             for r in rows:
-                all_events.append({
-                    "title": f"📚 {r['Title']}", # Ajout d'un émoji livre
+                final_events.append({
+                    "title": f"📚 {r['Title']}", 
                     "start": r['Start'],
                     "end": r['End'],
-                    "backgroundColor": ORANGE_REV, # Couleur Révisions
+                    "backgroundColor": ORANGE_REV,
                     "borderColor": GOLD
                 })
         except:
-            pass # Si la feuille "Events" n'existe pas encore
+            pass # Ignore si l'onglet Events n'existe pas encore
             
-    return all_events
+    return final_events
 
 # --- IA LOGIC ---
 def extract_text(files):
@@ -252,10 +268,13 @@ def dashboard_page(sh):
     st.markdown(f"### 👋 Bonjour, voici ton état des lieux")
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
     st.write("")
+    
+    # Indicateur discret de connexion DB
+    if not sh:
+        st.warning("⚠️ Connexion Google Sheets inactive. Le dashboard fonctionne en mode 'Lecture seule' pour l'emploi du temps.")
 
     gpa = 0.0
     urgent_tasks = 0
-    df_grades = pd.DataFrame()
     
     if sh:
         try:
@@ -290,22 +309,24 @@ def dashboard_page(sh):
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
         
-        # 1. Chargement des événements (ICS + Perso)
-        events = fetch_all_events(ICS_CALENDAR_URL, sh)
+        # Récupération des événements (Cache + BDD)
+        events = get_combined_events(ICS_CALENDAR_URL, sh)
         
         calendar_options = {
             "headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth,listWeek"},
             "initialView": "timeGridWeek",
             "slotMinTime": "08:00:00",
             "slotMaxTime": "21:00:00",
-            "height": "500px",
+            "height": "550px",
+            "allDaySlot": False,
+            "locale": "fr",
         }
         
         calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
-        # 2. Formulaire d'ajout rapide (Expander)
-        with st.expander("➕ Ajouter une session de révision (Perso)"):
-            if sh:
+        # Formulaire d'ajout (visible seulement si DB connectée)
+        if sh:
+            with st.expander("➕ Ajouter une session de révision (Perso)"):
                 with st.form("add_event"):
                     ev_title = st.text_input("Matière / Titre")
                     c_d, c_h1, c_h2 = st.columns(3)
@@ -315,19 +336,16 @@ def dashboard_page(sh):
                     
                     if st.form_submit_button("Ajouter au calendrier"):
                         try:
-                            # Construction des dates format ISO
                             start_iso = datetime.combine(ev_date, ev_start).isoformat()
                             end_iso = datetime.combine(ev_date, ev_end).isoformat()
                             
                             ws_ev = sh.worksheet("Events")
                             ws_ev.append_row([str(uuid.uuid4())[:8], ev_title, start_iso, end_iso, "Revision"])
-                            st.success("Ajouté ! Rafraîchis pour voir.")
+                            st.success("Ajouté !")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erreur (as-tu créé l'onglet 'Events' ?) : {e}")
-            else:
-                st.warning("Connexion BDD inactive.")
+                            st.error(f"Erreur : Vérifie que l'onglet 'Events' existe dans Sheets. {e}")
 
     # --- PARTIE TO-DO ---
     with c_right:
@@ -344,7 +362,10 @@ def dashboard_page(sh):
                         st.rerun()
                     c_txt.markdown(f"**{row['Task']}**<br><span style='font-size:12px; color:grey'>{row['Subject']}</span>", unsafe_allow_html=True)
         else:
-            st.info("Aucune tâche urgente ! 🎉")
+            if not sh:
+                st.info("Reconnecte la BDD pour voir les tâches.")
+            else:
+                st.info("Aucune tâche urgente ! 🎉")
 
 def subject_page(sh, subject):
     conf = SUBJECTS_CONFIG[subject]
@@ -459,8 +480,6 @@ def subject_page(sh, subject):
 # --- MAIN ---
 if __name__ == "__main__":
     sh = get_db_connection()
-    if not sh: st.error("Erreur connexion Google Sheets")
-    
     page = sidebar_menu()
     
     if page == "Dashboard":
