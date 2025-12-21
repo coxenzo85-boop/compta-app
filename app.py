@@ -17,6 +17,14 @@ from streamlit_calendar import calendar
 # --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
+# --- 🧠 GESTION DE LA MÉMOIRE (SESSION STATE) - PLACÉ EN HAUT POUR ÉVITER LES CRASH ---
+if 'current_view' not in st.session_state:
+    st.session_state.current_view = 'Dashboard'
+if 'selected_subject' not in st.session_state:
+    st.session_state.selected_subject = None
+if 'pomodoro' not in st.session_state:
+    st.session_state.pomodoro = None
+
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
 
@@ -27,7 +35,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# --- INJECTION CSS (THE MAGIC SAUCE 🪄) ---
+# --- INJECTION CSS (INTERACTIVITÉ TOTALE) ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -43,76 +51,46 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    /* --- 1. SIDEBAR TOTALEMENT PERSONNALISÉE --- */
+    /* --- SIDEBAR --- */
     [data-testid="stSidebar"] {{
         background-color: {NAVY};
         border-right: 1px solid #334155;
     }}
-    
-    /* Titre Sidebar */
     [data-testid="stSidebar"] h2 {{
         color: white !important;
         text-align: center;
-        transition: transform 0.3s ease;
-        cursor: default;
-    }}
-    [data-testid="stSidebar"] h2:hover {{
-        transform: scale(1.05);
-        text-shadow: 0 0 10px {TEAL};
-    }}
-
-    /* Transformation des Radio Buttons en Menu Interactif */
-    [data-testid="stSidebar"] [role="radiogroup"] {{
-        background-color: transparent;
     }}
     
-    /* Le conteneur de chaque option */
+    /* MENU RADIO TRANSFORMÉ EN BOUTONS INTERACTIFS */
     [data-testid="stSidebar"] [role="radiogroup"] label {{
         padding: 10px 15px !important;
         margin-bottom: 8px !important;
         background-color: transparent !important;
         border: 1px solid transparent !important;
         border-radius: 8px !important;
-        color: #cbd5e1 !important; /* Gris clair */
+        color: #cbd5e1 !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         cursor: pointer !important;
     }}
-
-    /* Effet Hover (Survol) - Glissement + Couleur */
     [data-testid="stSidebar"] [role="radiogroup"] label:hover {{
-        background-color: rgba(0, 128, 128, 0.2) !important; /* Teal transparent */
+        background-color: rgba(0, 128, 128, 0.2) !important;
         color: {GOLD} !important;
         border-color: {TEAL} !important;
-        transform: translateX(10px) !important; /* Le glissement magique */
-        padding-left: 20px !important;
+        transform: translateX(10px) !important;
     }}
-
-    /* Option Sélectionnée (Active) */
     [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] {{
         background-color: {TEAL} !important;
         color: white !important;
         font-weight: bold !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-        border: none !important;
         transform: scale(1.02) !important;
     }}
-
-    /* Cache les ronds des boutons radio */
+    /* Cache les ronds */
     [data-testid="stSidebar"] [role="radiogroup"] label div:first-child {{
         display: none;
     }}
 
-    /* --- 2. TABS & BOUTONS --- */
-    button[data-baseweb="tab"] {{
-        transition: all 0.3s ease;
-    }}
-    button[data-baseweb="tab"]:hover {{
-        color: {TEAL};
-        background-color: rgba(0, 128, 128, 0.1);
-        transform: translateY(-2px);
-    }}
-    
-    /* --- 3. CARTES DE COURS CLIQUABLES (HACK) --- */
+    /* --- CARTES COURS (CLIQUABLES + EFFET HOVER) --- */
     .course-card-bg {{
         background-color: white;
         border-radius: 15px;
@@ -123,9 +101,14 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         position: relative;
         z-index: 0;
+        transition: transform 0.3s ease;
+    }}
+    .element-container:hover .course-card-bg {{
+        transform: translateY(-5px);
+        border-left-color: {TEAL} !important;
     }}
 
-    /* Bouton invisible overlay */
+    /* Bouton invisible overlay (le hack pour rendre cliquable) */
     div.stButton > button.click-cover {{
         position: absolute;
         top: -190px;
@@ -139,10 +122,24 @@ st.markdown(f"""
     }}
     div.stButton > button.click-cover:hover {{
         background-color: {TEAL};
-        opacity: 0.05; /* Voile coloré */
+        opacity: 0.05;
     }}
 
-    /* --- 4. FOCUS ROOM TIMER --- */
+    /* --- KPI CARDS --- */
+    .kpi-card {{
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        border-left: 5px solid {NAVY};
+        transition: all 0.3s ease;
+    }}
+    .kpi-card:hover {{
+        transform: translateY(-5px);
+        border-left-color: {TEAL};
+    }}
+
+    /* --- TIMER FOCUS --- */
     .timer-display {{
         font-size: 80px;
         font-weight: bold;
@@ -155,10 +152,6 @@ st.markdown(f"""
         border: 4px solid {GOLD};
         box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         margin: 20px 0;
-        transition: transform 0.2s;
-    }}
-    .timer-display:hover {{
-        transform: scale(1.02);
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -180,9 +173,6 @@ SUBJECTS_CONFIG = {
     "Stage et Mémoire": {"icon": "mortarboard", "cat": "Pro", "color": TEAL}
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
-
-# --- GESTION DE L'ÉTAT ---
-if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
 
 # --- CONNEXIONS & UTILS ---
 @st.cache_resource 
@@ -249,7 +239,7 @@ def get_gemini_response(prompt, context):
 # --- COMPOSANTS UI ---
 def kpi_card(title, value, subtitle, color, icon):
     st.markdown(f"""
-    <div style="background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-left: 5px solid {color}; transition: transform 0.3s; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0px)'">
+    <div class="kpi-card" style="border-left: 5px solid {color};">
         <div style="display: flex; justify-content: space-between; align-items: start;">
             <div>
                 <p style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">{title}</p>
@@ -263,20 +253,13 @@ def kpi_card(title, value, subtitle, color, icon):
     </div>
     """, unsafe_allow_html=True)
 
-# --- NAVIGATION SIDEBAR (NATIVE & INTERACTIVE) ---
+# --- NAVIGATION SIDEBAR ---
 def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='margin-bottom:20px;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
-        
-        # Navigation Native stylisée en CSS
-        page = st.radio(
-            "Menu",
-            ["Dashboard", "Mes Cours", "Focus Room"],
-            label_visibility="collapsed"
-        )
+        page = st.radio("Menu", ["Dashboard", "Mes Cours", "Focus Room"], label_visibility="collapsed")
         
         st.markdown("---")
-        # Widget Focus Zone (Mini)
         st.markdown(f"<p style='text-align:center; color:{GOLD}; font-size:12px; font-weight:bold;'>FOCUS RAPIDE</p>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         if c1.button("▶ 25m", use_container_width=True): st.session_state.pomodoro = time.time()
@@ -378,13 +361,10 @@ def courses_grid_page():
     st.markdown(f"### 📚 Mes Modules")
     st.markdown("Accès rapide aux ressources.")
     st.write("")
-
     cols = st.columns(3)
-    
     for index, subject in enumerate(SUBJECTS):
         conf = SUBJECTS_CONFIG[subject]
         col = cols[index % 3]
-        
         with col:
             st.markdown(f"""
             <div class="course-card-bg">
@@ -398,29 +378,15 @@ def courses_grid_page():
                 <div style="height: 4px; width: 40px; background-color: {conf['color']}; border-radius: 2px;"></div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # HACK CSS BOUTON OVERLAY
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
                 st.session_state.selected_subject = subject
                 st.rerun()
-            
-            st.markdown(f"""
-            <style>
+            st.markdown(f"""<style>
             div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{
-                position: absolute !important;
-                top: -190px !important;
-                left: 0 !important;
-                width: 100% !important;
-                height: 200px !important;
-                opacity: 0 !important;
-                z-index: 2 !important;
+                position: absolute !important; top: -190px !important; left: 0 !important; width: 100% !important; height: 200px !important; opacity: 0 !important; z-index: 2 !important;
             }}
-            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{
-                opacity: 0.05 !important;
-                background-color: {TEAL} !important;
-            }}
-            </style>
-            """, unsafe_allow_html=True)
+            div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button:hover {{ opacity: 0.05 !important; background-color: {TEAL} !important; }}
+            </style>""", unsafe_allow_html=True)
 
 # --- PAGE 3: DÉTAIL MATIÈRE ---
 def subject_detail_page(sh, subject):
@@ -488,7 +454,6 @@ def subject_detail_page(sh, subject):
             cb.write(""); cb.write("")
             if cb.button("Ajouter", key=f"bt_{subject}"):
                 ws_t.append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
-            
             recs = ws_t.get_all_records()
             if recs:
                 df = pd.DataFrame(recs)
@@ -505,17 +470,14 @@ def subject_detail_page(sh, subject):
 def focus_room_page():
     st.markdown(f"### ⏳ Focus Room")
     st.markdown("Configure ta session.")
-    
     c1, c2, c3, c4 = st.columns(4)
     work_min = c1.number_input("Travail (min)", 1, 60, 25)
     short_break = c2.number_input("Pause courte", 1, 15, 5)
     long_break = c3.number_input("Pause longue", 5, 30, 15)
     cycles = c4.number_input("Cycles", 1, 10, 4)
-
     col_center, _ = st.columns([1, 2])
     start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
     placeholder = st.empty()
-
     if start_btn:
         total_cycles = cycles
         for i in range(total_cycles):
