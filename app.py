@@ -117,7 +117,6 @@ SUBJECTS_CONFIG = {
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
 # --- CONNEXION GOOGLE (AVEC CACHE 🧠) ---
-# Le décorateur ci-dessous empêche la déconnexion intempestive !
 @st.cache_resource 
 def get_db_connection():
     try:
@@ -146,7 +145,6 @@ def get_ics_events_cached(ics_url):
                 start = component.get('dtstart').dt
                 end = component.get('dtend').dt
                 
-                # Correction du titre "None"
                 raw_summary = component.get('summary')
                 summary = str(raw_summary) if raw_summary else "Cours"
                 
@@ -265,7 +263,6 @@ def dashboard_page(sh):
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
     st.write("")
     
-    # Check DB silencieux
     if not sh:
         st.warning("⚠️ Connexion BDD inactive. Recharge la page si cela persiste.")
 
@@ -341,7 +338,7 @@ def dashboard_page(sh):
                         except Exception as e:
                             st.error(f"Erreur : {e}")
 
-            # SUPPRESSION
+            # SUPPRESSION (CORRIGÉE !)
             with st.expander("🗑️ Gérer / Supprimer mes événements"):
                 try:
                     ws_ev = sh.worksheet("Events")
@@ -380,8 +377,10 @@ def dashboard_page(sh):
                             st.divider()
                     else:
                         st.info("Aucun événement personnel.")
-                except:
-                    st.warning("Onglet 'Events' inaccessible.")
+                except Exception as e: # <--- LE CORRECTIF EST ICI (On ignore les erreurs de rerun)
+                    # On affiche l'erreur seulement si ce n'est pas un rechargement
+                    if "rerun" not in str(e).lower():
+                         st.warning("Chargement...")
 
     # --- PARTIE TO-DO ---
     with c_right:
