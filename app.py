@@ -18,7 +18,7 @@ from streamlit_calendar import calendar
 # --- CONFIGURATION PAGE & DESIGN SYSTEM ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
-# 🔗 TON LIEN EMPLOI DU TEMPS (NANTES)
+# 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
 
 # PALETTE DE COULEURS
@@ -28,7 +28,7 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# INJECTION CSS
+# INJECTION CSS (Design + Animations Hover)
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
@@ -44,28 +44,55 @@ st.markdown(f"""
         color: {NAVY};
     }}
 
-    [data-testid="stSidebar"] {{
-        background-color: {NAVY};
-    }}
-    [data-testid="stSidebar"] h1 {{
-        color: white !important;
-    }}
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
-        color: #cbd5e1 !important;
-    }}
+    /* Sidebar */
+    [data-testid="stSidebar"] {{ background-color: {NAVY}; }}
+    [data-testid="stSidebar"] h1 {{ color: white !important; }}
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
 
+    /* KPI Cards */
     .kpi-card {{
         background-color: white;
         padding: 20px;
         border-radius: 12px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         border-left: 5px solid {NAVY};
-        transition: transform 0.2s;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }}
     .kpi-card:hover {{
         transform: translateY(-5px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     }}
     
+    /* Course Cards (Grille) */
+    .course-card-container {{
+        background-color: white;
+        border-radius: 15px;
+        padding: 20px;
+        height: 100%;
+        border: 1px solid #e2e8f0;
+        border-left: 6px solid {NAVY};
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+    }}
+    
+    /* Effet Hover sur les cartes de cours */
+    .course-card-container:hover {{
+        transform: translateY(-8px);
+        box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.15);
+        border-left-color: {TEAL} !important;
+    }}
+    
+    .course-card-container:hover h3 {{
+        color: {TEAL} !important;
+    }}
+    
+    .course-card-container:hover .icon-box {{
+        background-color: {TEAL} !important;
+        color: white !important;
+    }}
+
+    /* Boutons */
     .stButton>button {{
         background-color: {TEAL};
         color: white;
@@ -79,6 +106,7 @@ st.markdown(f"""
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }}
 
+    /* Onglets */
     .stTabs [data-baseweb="tab-list"] {{
         gap: 10px;
         background-color: white;
@@ -116,24 +144,25 @@ SUBJECTS_CONFIG = {
 }
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
-# --- CONNEXION GOOGLE (AVEC CACHE 🧠) ---
+# --- GESTION DE L'ÉTAT (NAVIGATION) ---
+if 'current_view' not in st.session_state:
+    st.session_state.current_view = 'Dashboard'
+if 'selected_subject' not in st.session_state:
+    st.session_state.selected_subject = None
+
+# --- CONNEXIONS & UTILS ---
 @st.cache_resource 
 def get_db_connection():
     try:
-        if "gcp_service_account" not in st.secrets:
-            return None
-            
+        if "gcp_service_account" not in st.secrets: return None
         scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-        credentials_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
+        creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scope)
         client = gspread.authorize(creds)
-        sheet = client.open("L3_Compta_Database")
-        return sheet
+        return client.open("L3_Compta_Database")
     except Exception as e:
         print(f"Erreur DB: {e}") 
         return None
 
-# --- CALENDAR ENGINE ---
 @st.cache_data(ttl=3600, show_spinner=False) 
 def get_ics_events_cached(ics_url):
     ics_events = []
@@ -142,51 +171,34 @@ def get_ics_events_cached(ics_url):
         if response.status_code == 200:
             cal = Calendar.from_ical(response.content)
             for component in cal.walk('vevent'):
-                start = component.get('dtstart').dt
-                end = component.get('dtend').dt
-                
-                raw_summary = component.get('summary')
-                summary = str(raw_summary) if raw_summary else "Cours"
-                
-                start_str = start.isoformat() if hasattr(start, 'isoformat') else str(start)
-                end_str = end.isoformat() if hasattr(end, 'isoformat') else str(end)
-
+                start, end = component.get('dtstart').dt, component.get('dtend').dt
+                summary = str(component.get('summary')) if component.get('summary') else "Cours"
                 ics_events.append({
                     "title": summary,
-                    "start": start_str,
-                    "end": end_str,
-                    "backgroundColor": TEAL,
-                    "borderColor": NAVY
+                    "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
+                    "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+                    "backgroundColor": TEAL, "borderColor": NAVY
                 })
-    except Exception as e:
-        print(f"Erreur ICS: {e}")
+    except: pass
     return ics_events
 
 def get_combined_events(ics_url, sh):
-    final_events = get_ics_events_cached(ics_url)
+    events = get_ics_events_cached(ics_url)
     if sh:
         try:
-            ws_ev = sh.worksheet("Events")
-            rows = ws_ev.get_all_records()
-            for r in rows:
-                final_events.append({
-                    "title": f"📚 {r['Title']}", 
-                    "start": r['Start'],
-                    "end": r['End'],
-                    "backgroundColor": ORANGE_REV,
-                    "borderColor": GOLD
+            for r in sh.worksheet("Events").get_all_records():
+                events.append({
+                    "title": f"📚 {r['Title']}", "start": r['Start'], "end": r['End'],
+                    "backgroundColor": ORANGE_REV, "borderColor": GOLD
                 })
-        except:
-            pass
-    return final_events
+        except: pass
+    return events
 
-# --- IA LOGIC ---
 def extract_text(files):
     text = ""
     for f in files:
         try:
-            if f.type == "application/pdf":
-                text += PdfReader(f).pages[0].extract_text() + "\n"
+            if f.type == "application/pdf": text += PdfReader(f).pages[0].extract_text() + "\n"
             elif "word" in f.type:
                 doc = Document(f)
                 for p in doc.paragraphs: text += p.text + "\n"
@@ -195,13 +207,10 @@ def extract_text(files):
 
 def get_gemini_response(prompt, context):
     try:
-        api_key = st.secrets["gemini"]["api_key"]
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
         model = genai.GenerativeModel('gemini-pro')
-        full_prompt = f"Tu es expert L3 Compta. Contexte: {context}. Question: {prompt}"
-        return model.generate_content(full_prompt).text
-    except Exception as e:
-        return f"Erreur IA: {e}"
+        return model.generate_content(f"Expert L3 Compta. Contexte: {context}. Question: {prompt}").text
+    except Exception as e: return f"Erreur IA: {e}"
 
 # --- COMPOSANTS UI ---
 def kpi_card(title, value, subtitle, color, icon):
@@ -220,16 +229,17 @@ def kpi_card(title, value, subtitle, color, icon):
     </div>
     """, unsafe_allow_html=True)
 
-# --- NAVIGATION ---
+# --- NAVIGATION SIDEBAR (SIMPLIFIÉE) ---
 def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
         
+        # Menu simplifié : Seulement 2 options
         selected = option_menu(
             menu_title=None,
-            options=["Dashboard"] + SUBJECTS,
-            icons=["speedometer2"] + [SUBJECTS_CONFIG[s]["icon"] for s in SUBJECTS],
+            options=["Dashboard", "Mes Cours"],
+            icons=["speedometer2", "grid-3x3-gap"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -243,10 +253,8 @@ def sidebar_menu():
         st.markdown("---")
         st.markdown(f"<p style='text-align:center; color:{GOLD}; font-size:12px; font-weight:bold;'>FOCUS ZONE</p>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
-        if c1.button("▶ 25m"):
-            st.session_state.pomodoro = time.time()
-        if c2.button("⏹ Stop"):
-            st.session_state.pomodoro = None
+        if c1.button("▶ 25m"): st.session_state.pomodoro = time.time()
+        if c2.button("⏹ Stop"): st.session_state.pomodoro = None
         
         if st.session_state.get("pomodoro"):
             elapsed = time.time() - st.session_state.pomodoro
@@ -257,34 +265,24 @@ def sidebar_menu():
 
     return selected
 
-# --- PAGES ---
+# --- PAGE 1: DASHBOARD ---
 def dashboard_page(sh):
     st.markdown(f"### 👋 Bonjour, voici ton état des lieux")
     st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
-    st.write("")
     
-    if not sh:
-        st.warning("⚠️ Connexion BDD inactive. Recharge la page si cela persiste.")
+    if not sh: st.warning("⚠️ Mode hors ligne (BDD déconnectée).")
 
-    gpa = 0.0
-    urgent_tasks = 0
-    
+    gpa, urgent_tasks = 0.0, 0
     if sh:
         try:
-            ws_g = sh.worksheet("Grades")
-            ws_t = sh.worksheet("Tasks")
-            grades = ws_g.get_all_records()
-            tasks = ws_t.get_all_records()
-            
-            df_grades = pd.DataFrame(grades)
-            if not df_grades.empty:
-                df_grades['Grade'] = pd.to_numeric(df_grades['Grade'], errors='coerce')
-                df_grades['Coefficient'] = pd.to_numeric(df_grades['Coefficient'], errors='coerce')
-                df_grades.dropna(inplace=True)
-                total_p = (df_grades['Grade'] * df_grades['Coefficient']).sum()
-                total_c = df_grades['Coefficient'].sum()
+            ws_g, ws_t = sh.worksheet("Grades"), sh.worksheet("Tasks")
+            grades, tasks = ws_g.get_all_records(), ws_t.get_all_records()
+            df_g = pd.DataFrame(grades)
+            if not df_g.empty:
+                df_g['Grade'], df_g['Coefficient'] = pd.to_numeric(df_g['Grade'], errors='coerce'), pd.to_numeric(df_g['Coefficient'], errors='coerce')
+                df_g.dropna(inplace=True)
+                total_p, total_c = (df_g['Grade'] * df_g['Coefficient']).sum(), df_g['Coefficient'].sum()
                 gpa = round(total_p / total_c, 2) if total_c > 0 else 0
-            
             urgent_tasks = len([t for t in tasks if t['Status'] == 'À faire'])
         except: pass
 
@@ -294,119 +292,105 @@ def dashboard_page(sh):
     with c3: kpi_card("Semaine", f"S{datetime.now().isocalendar()[1]}", "🗓 Année Univ.", GOLD, "📅")
 
     st.write("")
-    st.write("")
-
     c_left, c_right = st.columns([2, 1])
 
-    # --- PARTIE CALENDRIER ---
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
-        
         events = get_combined_events(ICS_CALENDAR_URL, sh)
-        
         calendar_options = {
-            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth,listWeek"},
-            "initialView": "timeGridWeek",
-            "slotMinTime": "08:00:00",
-            "slotMaxTime": "21:00:00",
-            "height": "550px",
-            "allDaySlot": False,
-            "locale": "fr",
+            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"},
+            "initialView": "timeGridWeek", "slotMinTime": "08:00:00", "slotMaxTime": "21:00:00", "height": "550px", "allDaySlot": False, "locale": "fr"
         }
-        
         calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
         if sh:
             with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event"):
-                    ev_title = st.text_input("Matière / Titre")
-                    c_d, c_h1, c_h2 = st.columns(3)
-                    ev_date = c_d.date_input("Date", date.today())
-                    ev_start = c_h1.time_input("Début", dt_time(18, 0))
-                    ev_end = c_h2.time_input("Fin", dt_time(19, 0))
-                    
+                    ev_title, c_d, c_h1, c_h2 = st.text_input("Matière"), st.columns(3)[0], st.columns(3)[1], st.columns(3)[2]
+                    ev_date, ev_start, ev_end = c_d.date_input("Date"), c_h1.time_input("Début", dt_time(18,0)), c_h2.time_input("Fin", dt_time(19,0))
                     if st.form_submit_button("Ajouter"):
                         try:
-                            start_iso = datetime.combine(ev_date, ev_start).isoformat()
-                            end_iso = datetime.combine(ev_date, ev_end).isoformat()
-                            ws_ev = sh.worksheet("Events")
-                            ws_ev.append_row([str(uuid.uuid4())[:8], ev_title, start_iso, end_iso, "Revision"])
-                            st.success("Ajouté !")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur : {e}")
+                            start, end = datetime.combine(ev_date, ev_start).isoformat(), datetime.combine(ev_date, ev_end).isoformat()
+                            sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
+                            st.success("Ajouté !"); time.sleep(1); st.rerun()
+                        except Exception as e: st.error(f"Erreur: {e}")
 
-            with st.expander("🗑️ Gérer / Supprimer mes événements"):
+            with st.expander("🗑️ Gérer mes événements"):
                 try:
-                    ws_ev = sh.worksheet("Events")
-                    rows = ws_ev.get_all_records()
-                    df_ev = pd.DataFrame(rows)
-                    
+                    df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
                     if not df_ev.empty:
                         for i, row in df_ev.iterrows():
-                            c_titre, c_btn = st.columns([4, 1])
-                            try:
-                                d_start = datetime.fromisoformat(row['Start'])
-                                date_str = d_start.strftime("%d/%m à %H:%M")
-                            except: date_str = row['Start']
-                                
-                            c_titre.markdown(f"**{row['Title']}** <span style='font-size:12px; color:grey'>({date_str})</span>", unsafe_allow_html=True)
-                            
-                            if c_btn.button("❌", key=f"del_ev_{row['ID']}"):
+                            c_t, c_b = st.columns([4, 1])
+                            c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
+                            if c_b.button("❌", key=f"del_ev_{row['ID']}"):
                                 try:
-                                    target_id = str(row['ID']).strip()
-                                    all_ids = ws_ev.col_values(1)
-                                    row_to_del = -1
-                                    for idx, val in enumerate(all_ids):
-                                        if str(val).strip() == target_id:
-                                            row_to_del = idx + 1
-                                            break
-                                    if row_to_del != -1:
-                                        ws_ev.delete_rows(row_to_del)
-                                        st.success("Supprimé !")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("Introuvable.")
-                                except Exception as e:
-                                    st.error(f"Erreur : {e}")
+                                    ids = sh.worksheet("Events").col_values(1)
+                                    idx = ids.index(str(row['ID']).strip()) + 1
+                                    sh.worksheet("Events").delete_rows(idx)
+                                    st.success("Supprimé !"); time.sleep(1); st.rerun()
+                                except: st.error("Introuvable")
                             st.divider()
-                    else:
-                        st.info("Aucun événement personnel.")
+                    else: st.info("Aucun événement.")
                 except Exception as e:
-                    if "rerun" not in str(e).lower():
-                         st.warning("Chargement...")
+                    if "rerun" not in str(e).lower(): st.warning("Chargement...")
 
-    # --- PARTIE TO-DO (AVEC ÉCHÉANCE) ---
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh and urgent_tasks > 0:
-            df_t = pd.DataFrame(tasks)
-            todo = df_t[df_t['Status'] == 'À faire'].head(4)
+            todo = pd.DataFrame(tasks)[pd.DataFrame(tasks)['Status'] == 'À faire'].head(4)
             for i, row in todo.iterrows():
                 with st.container(border=True):
-                    c_check, c_txt = st.columns([1, 4])
-                    if c_check.button("✔", key=f"done_{row['ID']}"):
-                        cell = ws_t.find(row['ID'])
-                        ws_t.update_cell(cell.row, 4, "Fait")
-                        st.rerun()
-                    
-                    # Récupération de la date avec sécurité
-                    date_display = ""
-                    if "Due_Date" in row and row["Due_Date"]:
-                        date_display = f"📅 {row['Due_Date']}"
-                        
-                    c_txt.markdown(f"**{row['Task']}**<br><span style='font-size:12px; color:grey'>{row['Subject']}</span> <span style='font-size:11px; color:#e11d48; font-weight:bold; float:right'>{date_display}</span>", unsafe_allow_html=True)
-        else:
-            if not sh:
-                st.info("Reconnecte la BDD pour voir les tâches.")
-            else:
-                st.info("Aucune tâche urgente ! 🎉")
+                    c_chk, c_tx = st.columns([1, 4])
+                    if c_chk.button("✔", key=f"done_{row['ID']}"):
+                        cell = sh.worksheet("Tasks").find(row['ID'])
+                        sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
+                    d_disp = f"📅 {row['Due_Date']}" if row["Due_Date"] else ""
+                    c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
+        else: st.info("Rien à faire !")
 
-def subject_page(sh, subject):
-    conf = SUBJECTS_CONFIG[subject]
+# --- PAGE 2: GRILLE DES COURS (NOUVEAU) ---
+def courses_grid_page():
+    st.markdown(f"### 📚 Mes Modules")
+    st.markdown("Sélectionne une matière pour accéder aux ressources, notes et IA.")
+    st.write("")
+
+    # Création de la grille (3 colonnes)
+    cols = st.columns(3)
     
+    for index, subject in enumerate(SUBJECTS):
+        conf = SUBJECTS_CONFIG[subject]
+        col = cols[index % 3] # Distribution dans les colonnes
+        
+        with col:
+            # HTML Card Visuel (Non cliquable directement, c'est le bouton en dessous qui fait l'action)
+            st.markdown(f"""
+            <div class="course-card-container">
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <span style="background-color: #f1f5f9; color: {NAVY}; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">{conf['cat']}</span>
+                    <div class="icon-box" style="width:30px; height:30px; border-radius:50%; background-color: {CLOUD}; display:flex; align-items:center; justify-content:center; color: {NAVY}; transition: all 0.3s ease;">
+                         <i class="bi bi-{conf.get('icon', 'book')}"></i>
+                    </div>
+                </div>
+                <h3 style="margin-top: 15px; font-size: 18px; margin-bottom: 5px; color: {NAVY}; transition: color 0.3s ease;">{subject}</h3>
+                <div style="height: 4px; width: 40px; background-color: {conf['color']}; border-radius: 2px;"></div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Le bouton invisible qui couvre la carte (hack pour l'UX) ou bouton "Ouvrir"
+            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
+                st.session_state.selected_subject = subject
+                st.rerun()
+            
+            st.write("") # Espacement
+
+# --- PAGE 3: DÉTAIL MATIÈRE ---
+def subject_detail_page(sh, subject):
+    # Bouton retour
+    if st.button("← Retour à la grille"):
+        st.session_state.selected_subject = None
+        st.rerun()
+
+    conf = SUBJECTS_CONFIG[subject]
     st.markdown(f"""
     <div style="background-color: white; padding: 30px; border-radius: 15px; border-top: 8px solid {conf['color']}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
         <span style="background-color: #f1f5f9; padding: 5px 10px; border-radius: 5px; font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b;">{conf['cat']}</span>
@@ -418,121 +402,89 @@ def subject_page(sh, subject):
 
     with st.sidebar:
         st.markdown("---")
-        st.markdown("**📂 Documents du cours**")
-        files = st.file_uploader("PDF/Word", accept_multiple_files=True, key=subject)
-        context = ""
-        if files: 
-            context = extract_text(files)
-            st.success(f"{len(files)} fichiers chargés")
+        st.markdown("**📂 Documents**")
+        files = st.file_uploader("Drop PDF/Word", accept_multiple_files=True, key=subject)
+        context = extract_text(files) if files else ""
+        if files: st.success(f"{len(files)} docs chargés")
 
-    # TAB 1: IA
     with tab1:
-        st.caption("Pose tes questions à l'expert. Basé sur tes documents.")
         if "msgs" not in st.session_state: st.session_state.msgs = {}
         if subject not in st.session_state.msgs: st.session_state.msgs[subject] = []
-
         for m in st.session_state.msgs[subject]:
             with st.chat_message(m["role"]): st.markdown(m["content"])
-        
-        if prompt := st.chat_input("Ex: Résume le chapitre 2..."):
-            st.session_state.msgs[subject].append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            
-            with st.chat_message("assistant"):
-                resp = get_gemini_response(prompt, context) if context else "⚠️ Upload un cours d'abord."
-                st.markdown(resp)
-            st.session_state.msgs[subject].append({"role": "assistant", "content": resp})
+        if p := st.chat_input("Question..."):
+            st.session_state.msgs[subject].append({"role": "user", "content": p})
+            with st.chat_message("user"): st.markdown(p)
+            r = get_gemini_response(p, context) if context else "⚠️ Upload un cours."
+            with st.chat_message("assistant"): st.markdown(r)
+            st.session_state.msgs[subject].append({"role": "assistant", "content": r})
 
-    # TAB 2: NOTES
     with tab2:
         c1, c2 = st.columns([1, 2])
         if sh:
             ws_g = sh.worksheet("Grades")
-            
             with c1:
                 with st.form("add_n"):
-                    st.write("**Ajouter une note**")
-                    note = st.number_input("Note /20", 0.0, 20.0, step=0.5)
-                    coef = st.number_input("Coef", 0.0, 10.0, value=1.0)
-                    type_eval = st.selectbox("Type", ["CC", "Partiel", "Examen"])
-                    if st.form_submit_button("Enregistrer"):
-                        ws_g.append_row([str(uuid.uuid4())[:8], subject, note, coef, type_eval])
-                        st.success("Sauvegardé !")
-                        time.sleep(1)
-                        st.rerun()
-            
-            # LISTE DES NOTES
+                    n, c, t = st.number_input("Note",0.0,20.0), st.number_input("Coef",0.0,10.0,1.0), st.selectbox("Type",["CC","Partiel","Examen"])
+                    if st.form_submit_button("Sauvegarder"):
+                        ws_g.append_row([str(uuid.uuid4())[:8], subject, n, c, t]); st.success("OK"); time.sleep(1); st.rerun()
             with c2:
-                raw_data = ws_g.get_all_values()
-                if len(raw_data) > 1:
-                    header = raw_data[0]
-                    rows = raw_data[1:]
-                    df = pd.DataFrame(rows, columns=header)
-                    df['real_row_index'] = [i + 2 for i in range(len(rows))]
-                    df_sub = df[df['Subject'] == subject]
-                    
-                    if not df_sub.empty:
-                        st.markdown("##### 📄 Mes notes")
-                        for i, row in df_sub.iterrows():
-                            with st.container(border=True):
-                                col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 1])
-                                col_a.markdown(f"**{row['Grade']}/20**")
-                                col_b.caption(f"Coef {row['Coefficient']}")
-                                col_c.caption(row['Type'])
-                                
-                                if col_d.button("❌", key=f"del_{row['ID']}"):
-                                    try:
-                                        row_num = int(row['real_row_index'])
-                                        ws_g.delete_rows(row_num)
-                                        st.success("✅ Supprimé !")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erreur : {e}")
-                    else:
-                        st.info("Aucune note pour cette matière.")
-                else:
-                    st.info("Tableau vide.")
+                rows = ws_g.get_all_values()
+                if len(rows) > 1:
+                    df = pd.DataFrame(rows[1:], columns=rows[0])
+                    df['real_idx'] = range(2, len(rows)+1)
+                    df_s = df[df['Subject'] == subject]
+                    for i, r in df_s.iterrows():
+                        ca, cb, cc, cd = st.columns([2,2,2,1])
+                        ca.markdown(f"**{r['Grade']}/20**")
+                        cb.caption(f"Coef {r['Coefficient']}")
+                        cc.caption(r['Type'])
+                        if cd.button("❌", key=f"d_{r['ID']}"):
+                            ws_g.delete_rows(int(r['real_idx'])); st.rerun()
 
-    # TAB 3: TACHES (MISE À JOUR AVEC DATE)
     with tab3:
         if sh:
             ws_t = sh.worksheet("Tasks")
-            # Modification de la mise en page pour ajouter la date
-            c_task, c_date, c_btn = st.columns([3, 2, 1])
-            
-            new_t = c_task.text_input("Nouvelle tâche", key=f"t_{subject}")
-            new_d = c_date.date_input("Échéance", date.today(), key=f"d_{subject}")
-            
-            # Ajustement pour aligner le bouton avec les champs
-            c_btn.write("") 
-            c_btn.write("")
-            if c_btn.button("Ajouter", key=f"b_{subject}"):
-                # Ajout avec la date à la fin
-                ws_t.append_row([str(uuid.uuid4())[:8], subject, new_t, "À faire", str(new_d)])
-                st.rerun()
+            ct, cd, cb = st.columns([3, 2, 1])
+            nt, nd = ct.text_input("Tâche", key=f"nt_{subject}"), cd.date_input("Date", key=f"nd_{subject}")
+            cb.write(""); cb.write("")
+            if cb.button("Ajouter", key=f"bt_{subject}"):
+                ws_t.append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
             
             recs = ws_t.get_all_records()
-            df = pd.DataFrame(recs)
-            if not df.empty:
+            if recs:
+                df = pd.DataFrame(recs)
                 df = df[(df['Subject'] == subject) & (df['Status'] == 'À faire')]
                 for i, r in df.iterrows():
-                    col_check, col_info = st.columns([1, 10])
-                    if col_check.checkbox("", key=f"chk_{r['ID']}"):
+                    c_chk, c_info = st.columns([1, 10])
+                    if c_chk.checkbox("", key=f"c_{r['ID']}"):
                         cell = ws_t.find(r['ID'])
-                        ws_t.update_cell(cell.row, 4, "Fait")
-                        st.rerun()
-                    
-                    # Affichage joli avec date
-                    d_display = f"📅 {r['Due_Date']}" if "Due_Date" in r and r["Due_Date"] else ""
-                    col_info.markdown(f"{r['Task']} <span style='color:#e11d48; font-size:0.8em; margin-left:10px;'>{d_display}</span>", unsafe_allow_html=True)
+                        ws_t.update_cell(cell.row, 4, "Fait"); st.rerun()
+                    d_show = f"📅 {r['Due_Date']}" if r["Due_Date"] else ""
+                    c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
 
-# --- MAIN ---
+
+# --- MAIN LOGIC ---
 if __name__ == "__main__":
     sh = get_db_connection()
-    page = sidebar_menu()
     
-    if page == "Dashboard":
+    # 1. Gestion de la Navigation Sidebar
+    selected_page = sidebar_menu()
+    
+    # Réinitialisation si changement de menu principal
+    if selected_page != st.session_state.current_view:
+        st.session_state.current_view = selected_page
+        st.session_state.selected_subject = None # On ferme le cours si on change de menu
+        st.rerun()
+
+    # 2. Affichage conditionnel
+    if st.session_state.current_view == "Dashboard":
         dashboard_page(sh)
-    else:
-        subject_page(sh, page)
+        
+    elif st.session_state.current_view == "Mes Cours":
+        # Si un sujet est sélectionné, on affiche sa page de détail
+        if st.session_state.selected_subject:
+            subject_detail_page(sh, st.session_state.selected_subject)
+        # Sinon, on affiche la grille
+        else:
+            courses_grid_page()
