@@ -15,8 +15,13 @@ from icalendar import Calendar
 from streamlit_calendar import calendar
 import io
 
-# --- CONFIGURATION PAGE & DESIGN SYSTEM ---
+# --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
+
+# --- GESTION DE L'ÉTAT ---
+if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
+if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
+if 'show_simulator' not in st.session_state: st.session_state.show_simulator = False # Pour ouvrir le simulateur
 
 # 🔗 LIEN EMPLOI DU TEMPS
 ICS_CALENDAR_URL = "http://edt-v2.univ-nantes.fr/calendar/ics?timetables[0]=110228"
@@ -28,493 +33,316 @@ GOLD = "#C5A059"
 CLOUD = "#F4F6F7"
 ORANGE_REV = "#ea580c"
 
-# INJECTION CSS
+# --- INJECTION CSS ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Lato:wght@300;400;700&display=swap');
+    html, body, [class*="css"] {{ font-family: 'Lato', sans-serif; background-color: {CLOUD}; color: {NAVY}; }}
+    h1, h2, h3 {{ font-family: 'Libre Baskerville', serif; color: {NAVY}; }}
     
-    html, body, [class*="css"] {{
-        font-family: 'Lato', sans-serif;
-        background-color: {CLOUD};
-        color: {NAVY};
-    }}
-    
-    h1, h2, h3 {{
-        font-family: 'Libre Baskerville', serif;
-        color: {NAVY};
-    }}
-
-    /* Sidebar */
     [data-testid="stSidebar"] {{ background-color: {NAVY}; }}
     [data-testid="stSidebar"] h1 {{ color: white !important; }}
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: #cbd5e1 !important; }}
 
-    /* KPI Cards */
+    /* KPI Cards interactives */
     .kpi-card {{
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border-left: 5px solid {NAVY};
+        background-color: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-left: 5px solid {NAVY};
+        transition: all 0.3s ease; cursor: pointer; position: relative;
     }}
-    
-    /* Boutons */
-    .stButton>button {{
-        background-color: {TEAL};
-        color: white;
-        border-radius: 8px;
-        border: none;
-        font-weight: bold;
+    .kpi-card:hover {{ transform: translateY(-5px); border-left-color: {TEAL}; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }}
+
+    /* Bouton invisible sur KPI pour cliquer */
+    .kpi-btn {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        z-index: 10; opacity: 0; cursor: pointer;
     }}
 
-    /* Cartes Fichiers Drive */
-    .file-card {{
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: transform 0.2s;
+    /* Tableaux Éditeurs */
+    [data-testid="stDataFrameResizable"] {{ border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; }}
+    
+    .stButton>button {{ background-color: {TEAL}; color: white; border-radius: 8px; border: none; font-weight: bold; }}
+    .course-card-bg {{
+        background-color: white; border-radius: 15px; padding: 20px; height: 180px; 
+        border: 1px solid #e2e8f0; border-left: 6px solid {NAVY};
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; z-index: 0; transition: transform 0.3s ease;
     }}
-    .file-card:hover {{
-        border-color: {TEAL};
-        transform: translateX(5px);
-    }}
-    .file-link {{
-        text-decoration: none;
-        color: {NAVY};
-        font-weight: bold;
-        font-size: 14px;
-    }}
-    .file-link:hover {{
-        color: {TEAL};
+    .element-container:hover .course-card-bg {{ transform: translateY(-5px); border-left-color: {TEAL} !important; }}
+    
+    div.stButton > button.click-cover {{
+        position: absolute; top: -190px; left: 0; width: 100%; height: 200px; opacity: 0; z-index: 2; cursor: pointer;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- DONNÉES & CONSTANTES ---
-SUBJECTS_CONFIG = {
-    "Diagnostic Financier": {"icon": "graph-up-arrow", "cat": "Finance", "color": NAVY},
-    "Compta Approfondie 2": {"icon": "calculator", "cat": "Finance", "color": NAVY},
-    "Modélisation des Coûts": {"icon": "grid-3x3", "cat": "Finance", "color": NAVY},
-    "Int. Financial Accounting": {"icon": "globe", "cat": "Finance", "color": NAVY},
-    "Diagnostic Général": {"icon": "activity", "cat": "Finance", "color": NAVY},
-    "Droit des Sociétés 2": {"icon": "hammer", "cat": "Droit", "color": "#64748b"},
-    "Droit du Crédit": {"icon": "bank", "cat": "Droit", "color": "#64748b"},
-    "Droit Pénal Affaires": {"icon": "shield-lock", "cat": "Droit", "color": "#64748b"},
-    "Organisation et SI": {"icon": "diagram-3", "cat": "Systèmes", "color": GOLD},
-    "Info. Décisionnelle": {"icon": "database", "cat": "Systèmes", "color": GOLD},
-    "Anglais des Affaires": {"icon": "chat-dots", "cat": "Pro", "color": TEAL},
-    "Projet Professionnel": {"icon": "briefcase", "cat": "Pro", "color": TEAL},
-    "Stage et Mémoire": {"icon": "mortarboard", "cat": "Pro", "color": TEAL}
-}
+# --- DONNÉES MATIÈRES (PAR DÉFAUT) ---
+DEFAULT_S1 = [
+    "Théorie des organisations", "Management Control", "Marché Financier", "TQG", 
+    "Financial Analysis", "Droit des sociétés", "Droit fiscal", "Comptabilité", "Anglais"
+]
+DEFAULT_S2 = [
+    "Diagnostic Financier", "Compta Approfondie 2", "Modélisation des Coûts", 
+    "Int. Financial Accounting", "Diagnostic Général", "Droit des Sociétés 2", 
+    "Droit du Crédit", "Droit Pénal Affaires", "Organisation et SI", "Info. Décisionnelle"
+]
+
+SUBJECTS_CONFIG = {s: {"cat": "Cours", "color": NAVY, "icon": "book"} for s in DEFAULT_S1 + DEFAULT_S2}
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
-# --- GESTION DE L'ÉTAT ---
-if 'current_view' not in st.session_state: st.session_state.current_view = 'Dashboard'
-if 'selected_subject' not in st.session_state: st.session_state.selected_subject = None
-
-# --- CONNEXIONS GOOGLE (SHEETS & DRIVE) ---
+# --- CONNEXIONS ---
 @st.cache_resource 
 def get_google_services():
     try:
         if "gcp_service_account" not in st.secrets: return None, None
-        
-        # Scopes pour Sheets ET Drive
-        scopes = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scopes)
-        
-        # Service Sheets
         client = gspread.authorize(creds)
         sheet = client.open("L3_Compta_Database")
-        
-        # Service Drive
         drive_service = build('drive', 'v3', credentials=creds)
-        
         return sheet, drive_service
     except Exception as e:
-        print(f"Erreur Connexion Google: {e}") 
+        print(f"Erreur Google: {e}") 
         return None, None
 
-# --- FONCTIONS DRIVE ---
+# --- UTILS DRIVE & CALENDAR ---
 def get_or_create_subject_folder(drive_service, subject_name):
-    """Cherche le dossier de la matière, sinon le crée dans le dossier racine"""
     root_id = st.secrets["general"]["drive_root_folder_id"]
-    
-    # Cherche si le dossier existe déjà dans le root
     query = f"mimeType='application/vnd.google-apps.folder' and name='{subject_name}' and '{root_id}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    results = drive_service.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    
-    if items:
-        return items[0]['id']
-    else:
-        # Crée le dossier
-        file_metadata = {
-            'name': subject_name,
-            'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [root_id]
-        }
-        file = drive_service.files().create(body=file_metadata, fields='id').execute()
-        return file.get('id')
+    if items: return items[0]['id']
+    file_metadata = {'name': subject_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [root_id]}
+    return drive_service.files().create(body=file_metadata, fields='id').execute().get('id')
 
 def list_drive_files(drive_service, folder_id):
-    query = f"'{folder_id}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name, webViewLink, iconLink)").execute()
+    results = drive_service.files().list(q=f"'{folder_id}' in parents and trashed=false", fields="files(id, name, webViewLink, iconLink)").execute()
     return results.get('files', [])
 
 def upload_file_to_drive(drive_service, uploaded_file, folder_id):
-    file_metadata = {'name': uploaded_file.name, 'parents': [folder_id]}
     media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file
+    drive_service.files().create(body={'name': uploaded_file.name, 'parents': [folder_id]}, media_body=media).execute()
 
-# --- CALENDAR UTILS ---
 @st.cache_data(ttl=3600, show_spinner=False) 
 def get_ics_events_cached(ics_url):
-    ics_events = []
+    events = []
     try:
-        response = requests.get(ics_url, timeout=10)
-        if response.status_code == 200:
-            cal = Calendar.from_ical(response.content)
-            for component in cal.walk('vevent'):
-                start, end = component.get('dtstart').dt, component.get('dtend').dt
-                summary = str(component.get('summary')) if component.get('summary') else "Cours"
-                ics_events.append({
-                    "title": summary,
-                    "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
-                    "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+        resp = requests.get(ics_url, timeout=10)
+        if resp.status_code == 200:
+            cal = Calendar.from_ical(resp.content)
+            for c in cal.walk('vevent'):
+                events.append({
+                    "title": str(c.get('summary', 'Cours')), 
+                    "start": c.get('dtstart').dt.isoformat(), 
+                    "end": c.get('dtend').dt.isoformat(),
                     "backgroundColor": TEAL, "borderColor": NAVY
                 })
     except: pass
-    return ics_events
-
-def get_combined_events(ics_url, sh):
-    events = get_ics_events_cached(ics_url)
-    if sh:
-        try:
-            for r in sh.worksheet("Events").get_all_records():
-                events.append({
-                    "title": f"📚 {r['Title']}", "start": r['Start'], "end": r['End'],
-                    "backgroundColor": ORANGE_REV, "borderColor": GOLD
-                })
-        except: pass
     return events
 
-# --- COMPOSANTS UI ---
-def kpi_card(title, value, subtitle, color, icon):
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left: 5px solid {color};">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div>
-                <p style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">{title}</p>
-                <h2 style="font-size: 2rem; font-weight: bold; color: {NAVY}; margin: 0;">{value}</h2>
-            </div>
-            <div style="width: 40px; height: 40px; background-color: {color}20; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {color}; font-size: 1.2rem;">
-                {icon}
-            </div>
-        </div>
-        <p style="font-size: 12px; color: {TEAL}; font-weight: bold; margin-top: 10px;">{subtitle}</p>
-    </div>
-    """, unsafe_allow_html=True)
+# --- CALCULATEUR MOYENNE ---
+def load_simulator_data(sh):
+    """Charge ou initialise les données du simulateur dans Google Sheets"""
+    try:
+        ws = sh.worksheet("Simulateur")
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # Si vide, on initialise avec les matières par défaut
+        if df.empty:
+            init_data = []
+            for m in DEFAULT_S1: init_data.append({"Matiere": m, "Semestre": "S1", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
+            for m in DEFAULT_S2: init_data.append({"Matiere": m, "Semestre": "S2", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
+            df = pd.DataFrame(init_data)
+            ws.update([df.columns.values.tolist()] + df.values.tolist())
+        return df
+    except: return pd.DataFrame()
+
+def save_simulator_data(sh, df):
+    try:
+        ws = sh.worksheet("Simulateur")
+        ws.update([df.columns.values.tolist()] + df.values.tolist())
+    except Exception as e: st.error(f"Erreur sauvegarde: {e}")
 
 # --- NAVIGATION ---
 def sidebar_menu():
     with st.sidebar:
-        st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
-        st.write("")
-        
-        selected = option_menu(
-            menu_title=None,
-            options=["Dashboard", "Mes Cours", "Focus Room"],
-            icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
-            menu_icon="cast",
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": NAVY},
-                "icon": {"color": "#94a3b8", "font-size": "14px"}, 
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "color": "#e2e8f0"},
-                "nav-link-selected": {"background-color": TEAL, "color": "white", "font-weight": "bold"},
-            }
-        )
-    return selected
+        st.markdown(f"<h2 style='margin-bottom:20px;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
+        page = st.radio("Menu", ["Dashboard", "Mes Cours", "Focus Room"], label_visibility="collapsed")
+        st.markdown("---")
+        if st.button("▶ 25m Focus", use_container_width=True): st.session_state.pomodoro = time.time()
+        if st.session_state.get("pomodoro"):
+            left = 25*60 - (time.time() - st.session_state.pomodoro)
+            if left > 0: st.markdown(f"<h1 style='text-align:center; color:white;'>{int(left//60):02}:{int(left%60):02}</h1>", unsafe_allow_html=True)
+    return page
 
-# --- PAGE 1: DASHBOARD ---
+# --- PAGES ---
 def dashboard_page(sh):
-    st.markdown(f"### 👋 Bonjour, voici ton état des lieux")
-    st.markdown(f"<p style='color:#64748b;'>Semestre 2 • {datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
+    # HEADER
+    st.markdown(f"### 👋 Dashboard Étudiant")
+    st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
+
+    # CHARGEMENT DONNÉES SIMULATEUR
+    df_sim = pd.DataFrame()
+    s1_avg_display = "0.0/20"
     
-    if not sh: st.warning("⚠️ Mode hors ligne (BDD déconnectée).")
-
-    gpa, urgent_tasks = 0.0, 0
     if sh:
-        try:
-            ws_g, ws_t = sh.worksheet("Grades"), sh.worksheet("Tasks")
-            grades, tasks = ws_g.get_all_records(), ws_t.get_all_records()
-            df_g = pd.DataFrame(grades)
-            if not df_g.empty:
-                df_g['Grade'], df_g['Coefficient'] = pd.to_numeric(df_g['Grade'], errors='coerce'), pd.to_numeric(df_g['Coefficient'], errors='coerce')
-                df_g.dropna(inplace=True)
-                total_p, total_c = (df_g['Grade'] * df_g['Coefficient']).sum(), df_g['Coefficient'].sum()
-                gpa = round(total_p / total_c, 2) if total_c > 0 else 0
-            urgent_tasks = len([t for t in tasks if t['Status'] == 'À faire'])
-        except: pass
+        df_sim = load_simulator_data(sh)
+        if not df_sim.empty:
+            # Calcul Moyenne Globale S1 pour le KPI
+            df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
+            df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
+            # On ignore les matières où les coefs sont 0
+            valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
+            if valid_coefs.any():
+                global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean() # Moyenne simple des moyennes
+                s1_avg_display = f"{global_avg:.2f}/20"
 
+    # KPI ROW
     c1, c2, c3 = st.columns(3)
-    with c1: kpi_card("Moyenne Générale", f"{gpa}/20", "📈 +0.5 pts vs S1", NAVY, "🎓")
-    with c2: kpi_card("Tâches Urgentes", str(urgent_tasks), "🔥 Keep pushing", TEAL, "⚡")
-    with c3: kpi_card("Semaine", f"S{datetime.now().isocalendar()[1]}", "🗓 Année Univ.", GOLD, "📅")
+    
+    # KPI 1 : MOYENNE (CLIQUABLE)
+    with c1:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <p style="font-size: 10px; font-weight: bold; color: #94a3b8; text-transform: uppercase;">Moyenne S1 (Estimée)</p>
+            <h2 style="font-size: 2rem; font-weight: bold; color: {NAVY}; margin: 0;">{s1_avg_display}</h2>
+            <p style="font-size: 12px; color: {TEAL}; font-weight: bold; margin-top: 10px;">🖱️ Clique pour éditer</p>
+        </div>
+        """, unsafe_allow_html=True)
+        # Bouton invisible qui active le simulateur
+        if st.button("OpenSim", key="kpi_avg_btn", type="secondary"):
+            st.session_state.show_simulator = not st.session_state.show_simulator
+            st.rerun()
+        st.markdown("""<style>div[data-testid="column"]:nth-child(1) div.stButton > button { position: absolute; top: -110px; height: 120px; width: 100%; opacity: 0; z-index: 5; }</style>""", unsafe_allow_html=True)
 
+    # KPI 2 & 3
+    with c2: kpi_card("Tâches", "Voir", "To-Do List", TEAL, "⚡")
+    with c3: kpi_card("Semaine", f"S{datetime.now().isocalendar()[1]}", "Calendrier", GOLD, "📅")
+
+    # --- SECTION SIMULATEUR (S'AFFICHE SI CLIQUÉ) ---
+    if st.session_state.show_simulator and not df_sim.empty:
+        st.write("")
+        st.markdown(f"### 🧮 Simulateur de Notes")
+        st.info("Modifie les notes et coefficients directement dans le tableau. Appuie sur 'Sauvegarder' pour mettre à jour.")
+        
+        tab_s1, tab_s2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
+        
+        # LOGIQUE D'ÉDITION
+        cols_config = {
+            "Matiere": st.column_config.TextColumn("Matière", disabled=True),
+            "Semestre": None, # On cache cette colonne
+            "Coef_CC": st.column_config.NumberColumn("Coef CC", min_value=0, max_value=10, step=0.5, format="%.1f"),
+            "Coef_Partiel": st.column_config.NumberColumn("Coef Partiel", min_value=0, max_value=10, step=0.5, format="%.1f"),
+            "Note_CC": st.column_config.NumberColumn("Note CC", min_value=0, max_value=20, step=0.5, format="%.1f"),
+            "Note_Partiel": st.column_config.NumberColumn("Note Partiel", min_value=0, max_value=20, step=0.5, format="%.1f")
+        }
+
+        with tab_s1:
+            df_s1 = df_sim[df_sim['Semestre'] == 'S1']
+            edited_s1 = st.data_editor(df_s1, column_config=cols_config, hide_index=True, use_container_width=True, key="editor_s1")
+            
+            # Calcul en temps réel pour l'affichage (Visualisation seulement)
+            if not edited_s1.empty:
+                edited_s1['Moyenne'] = ((edited_s1['Note_CC'] * edited_s1['Coef_CC']) + (edited_s1['Note_Partiel'] * edited_s1['Coef_Partiel'])) / (edited_s1['Coef_CC'] + edited_s1['Coef_Partiel'])
+                edited_s1['Moyenne'] = edited_s1['Moyenne'].fillna(0)
+                
+                # Joli tableau de résultats
+                st.caption("Aperçu des résultats :")
+                st.dataframe(edited_s1[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
+                
+                final_avg_s1 = edited_s1['Moyenne'].mean()
+                st.metric("Moyenne Générale S1 (Simulée)", f"{final_avg_s1:.2f}/20")
+
+        with tab_s2:
+            df_s2 = df_sim[df_sim['Semestre'] == 'S2']
+            edited_s2 = st.data_editor(df_s2, column_config=cols_config, hide_index=True, use_container_width=True, key="editor_s2")
+            
+            if not edited_s2.empty:
+                edited_s2['Moyenne'] = ((edited_s2['Note_CC'] * edited_s2['Coef_CC']) + (edited_s2['Note_Partiel'] * edited_s2['Coef_Partiel'])) / (edited_s2['Coef_CC'] + edited_s2['Coef_Partiel'])
+                edited_s2['Moyenne'] = edited_s2['Moyenne'].fillna(0)
+                st.caption("Aperçu des résultats :")
+                st.dataframe(edited_s2[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
+                final_avg_s2 = edited_s2['Moyenne'].mean()
+                st.metric("Moyenne Générale S2 (Simulée)", f"{final_avg_s2:.2f}/20")
+
+        # BOUTON SAUVEGARDE GLOBALE
+        if st.button("💾 Sauvegarder les modifications dans le Cloud", type="primary"):
+            # On fusionne S1 et S2 édités pour la sauvegarde
+            # Attention: edited_s1 a une colonne 'Moyenne' en plus qu'on ne veut pas sauvegarder
+            clean_s1 = edited_s1.drop(columns=['Moyenne'], errors='ignore')
+            clean_s2 = edited_s2.drop(columns=['Moyenne'], errors='ignore')
+            full_df = pd.concat([clean_s1, clean_s2])
+            save_simulator_data(sh, full_df)
+            st.success("Notes mises à jour !")
+            time.sleep(1)
+            st.rerun()
+        
+        st.markdown("---")
+
+    # REST OF DASHBOARD
     st.write("")
     c_left, c_right = st.columns([2, 1])
-
     with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
         events = get_combined_events(ICS_CALENDAR_URL, sh)
-        calendar_options = {
-            "headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"},
-            "initialView": "timeGridWeek", "slotMinTime": "08:00:00", "slotMaxTime": "21:00:00", "height": "550px", "allDaySlot": False, "locale": "fr"
-        }
-        calendar(events=events, options=calendar_options, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
-        
-        if sh:
-            with st.expander("➕ Ajouter une session de révision"):
-                with st.form("add_event"):
-                    ev_title, c_d, c_h1, c_h2 = st.text_input("Matière"), st.columns(3)[0], st.columns(3)[1], st.columns(3)[2]
-                    ev_date, ev_start, ev_end = c_d.date_input("Date"), c_h1.time_input("Début", dt_time(18,0)), c_h2.time_input("Fin", dt_time(19,0))
-                    if st.form_submit_button("Ajouter"):
-                        try:
-                            start, end = datetime.combine(ev_date, ev_start).isoformat(), datetime.combine(ev_date, ev_end).isoformat()
-                            sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
-                            st.success("Ajouté !"); time.sleep(1); st.rerun()
-                        except Exception as e: st.error(f"Erreur: {e}")
-
-            with st.expander("🗑️ Gérer mes événements"):
-                try:
-                    df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
-                    if not df_ev.empty:
-                        for i, row in df_ev.iterrows():
-                            c_t, c_b = st.columns([4, 1])
-                            c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
-                            if c_b.button("❌", key=f"del_ev_{row['ID']}"):
-                                try:
-                                    ids = sh.worksheet("Events").col_values(1)
-                                    idx = ids.index(str(row['ID']).strip()) + 1
-                                    sh.worksheet("Events").delete_rows(idx)
-                                    st.success("Supprimé !"); time.sleep(1); st.rerun()
-                                except: st.error("Introuvable")
-                            st.divider()
-                    else: st.info("Aucun événement.")
-                except Exception as e:
-                    if "rerun" not in str(e).lower(): st.warning("Chargement...")
-
+        calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
+    
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
-        if sh and urgent_tasks > 0:
-            todo = pd.DataFrame(tasks)[pd.DataFrame(tasks)['Status'] == 'À faire'].head(4)
-            for i, row in todo.iterrows():
-                with st.container(border=True):
-                    c_chk, c_tx = st.columns([1, 4])
-                    if c_chk.button("✔", key=f"done_{row['ID']}"):
-                        cell = sh.worksheet("Tasks").find(row['ID'])
-                        sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
-                    d_disp = f"📅 {row['Due_Date']}" if row["Due_Date"] else ""
-                    c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span> <span style='color:#e11d48; font-size:11px; float:right'>{d_disp}</span>", unsafe_allow_html=True)
-        else: st.info("Rien à faire !")
-
-# --- PAGE 2: GRILLE DES COURS ---
-def courses_grid_page():
-    st.markdown(f"### 📚 Mes Modules")
-    st.markdown("Accès rapide à tes cours.")
-    st.write("")
-
-    cols = st.columns(3)
-    
-    for index, subject in enumerate(SUBJECTS):
-        conf = SUBJECTS_CONFIG[subject]
-        col = cols[index % 3]
-        
-        with col:
-            st.markdown(f"""
-            <div style="background-color: white; border-radius: 15px; padding: 20px; height: 180px; border: 1px solid #e2e8f0; border-left: 6px solid {NAVY}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; z-index: 0;">
-                <div style="display:flex; justify-content:space-between; align-items:start;">
-                    <span style="background-color: #f1f5f9; color: {NAVY}; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">{conf['cat']}</span>
-                    <div class="icon-box" style="width:30px; height:30px; border-radius:50%; background-color: {CLOUD}; display:flex; align-items:center; justify-content:center; color: {NAVY};">
-                         <i class="bi bi-{conf.get('icon', 'book')}"></i>
-                    </div>
-                </div>
-                <h3 style="margin-top: 25px; font-size: 18px; margin-bottom: 5px; color: {NAVY};">{subject}</h3>
-                <div style="height: 4px; width: 40px; background-color: {conf['color']}; border-radius: 2px;"></div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Bouton d'action
-            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
-                st.session_state.selected_subject = subject
-                st.rerun()
-
-# --- PAGE 3: DÉTAIL MATIÈRE (AVEC DRIVE) ---
-def subject_detail_page(sh, drive, subject):
-    if st.button("← Retour à la grille"):
-        st.session_state.selected_subject = None
-        st.rerun()
-
-    conf = SUBJECTS_CONFIG[subject]
-    st.markdown(f"""
-    <div style="background-color: white; padding: 30px; border-radius: 15px; border-top: 8px solid {conf['color']}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
-        <span style="background-color: #f1f5f9; padding: 5px 10px; border-radius: 5px; font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b;">{conf['cat']}</span>
-        <h1 style="color: {NAVY}; margin-top: 10px; margin-bottom: 5px;">{subject}</h1>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # REMPLACEMENT IA PAR DRIVE
-    tab1, tab2, tab3 = st.tabs(["📂 Fichiers & Cours", "📝 Notes & Simu", "✅ Tâches"])
-
-    # TAB 1 : GOOGLE DRIVE
-    with tab1:
-        st.caption("Espace de stockage synchronisé avec Google Drive.")
-        
-        if drive:
-            # 1. Récupération/Création dossier
+        if sh:
             try:
-                folder_id = get_or_create_subject_folder(drive, subject)
-                
-                # 2. Zone d'Upload
-                uploaded_file = st.file_uploader("Déposer un fichier", key=f"up_{subject}")
-                if uploaded_file is not None:
-                    if st.button("Envoyer sur Drive"):
-                        with st.spinner("Envoi en cours..."):
-                            upload_file_to_drive(drive, uploaded_file, folder_id)
-                        st.success("Fichier envoyé !")
-                        time.sleep(1)
-                        st.rerun()
-                
-                st.markdown("---")
-                
-                # 3. Liste des fichiers
-                files = list_drive_files(drive, folder_id)
-                if files:
-                    for f in files:
-                        icon = f.get('iconLink', '')
-                        st.markdown(f"""
-                        <div class="file-card">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <img src="{icon}" width="20">
-                                <a href="{f['webViewLink']}" target="_blank" class="file-link">{f['name']}</a>
-                            </div>
-                            <span style="font-size:10px; color:grey;">Ouvrir ↗</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.info("Dossier vide. Ajoute tes premiers cours !")
-                    
-            except Exception as e:
-                st.error(f"Erreur Drive : {e}")
-                st.caption("Vérifie que tu as bien partagé le dossier racine avec l'adresse email du Service Account.")
-        else:
-            st.warning("Service Drive non configuré (vérifie tes secrets).")
+                tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
+                if not tasks.empty:
+                    for i, row in tasks[tasks['Status'] == 'À faire'].head(4).iterrows():
+                        with st.container(border=True):
+                            c_chk, c_tx = st.columns([1, 4])
+                            if c_chk.button("✔", key=f"d_{row['ID']}"):
+                                cell = sh.worksheet("Tasks").find(row['ID'])
+                                sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
+                            c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span>", unsafe_allow_html=True)
+            except: st.info("Aucune tâche.")
 
-    # TAB 2 : NOTES
+# --- PAGE 2 & 3 & 4 (COURS & FOCUS) ---
+def courses_grid_page():
+    st.markdown("### 📚 Mes Modules"); st.write("")
+    cols = st.columns(3)
+    for index, subject in enumerate(SUBJECTS):
+        with cols[index % 3]:
+            st.markdown(f"""<div class="course-card-bg"><h3 style="margin-top:40px; color:{NAVY}">{subject}</h3></div>""", unsafe_allow_html=True)
+            if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True, type="secondary"):
+                st.session_state.selected_subject = subject; st.rerun()
+            st.markdown(f"""<style>div[data-testid="column"]:nth-child({(index % 3) + 1}) div.stButton > button {{ position: absolute; top: -190px; height: 200px; width: 100%; opacity: 0; z-index: 2; }}</style>""", unsafe_allow_html=True)
+
+def subject_detail_page(sh, drive, subject):
+    if st.button("← Retour"): st.session_state.selected_subject = None; st.rerun()
+    st.title(subject)
+    tab1, tab2 = st.tabs(["📂 Fichiers", "✅ Tâches"])
+    with tab1:
+        if drive:
+            fid = get_or_create_subject_folder(drive, subject)
+            up = st.file_uploader("Ajouter fichier", key="up")
+            if up and st.button("Envoyer"): upload_file_to_drive(drive, up, fid); st.success("OK"); st.rerun()
+            for f in list_drive_files(drive, fid):
+                st.markdown(f"<div style='padding:10px; border:1px solid #ddd; margin:5px; border-radius:5px'><a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{NAVY}'>📄 {f['name']}</a></div>", unsafe_allow_html=True)
     with tab2:
-        c1, c2 = st.columns([1, 2])
         if sh:
-            ws_g = sh.worksheet("Grades")
-            with c1:
-                with st.form("add_n"):
-                    n, c, t = st.number_input("Note",0.0,20.0), st.number_input("Coef",0.0,10.0,1.0), st.selectbox("Type",["CC","Partiel","Examen"])
-                    if st.form_submit_button("Sauvegarder"):
-                        ws_g.append_row([str(uuid.uuid4())[:8], subject, n, c, t]); st.success("OK"); time.sleep(1); st.rerun()
-            with c2:
-                rows = ws_g.get_all_values()
-                if len(rows) > 1:
-                    df = pd.DataFrame(rows[1:], columns=rows[0])
-                    df['real_idx'] = range(2, len(rows)+1)
-                    df_s = df[df['Subject'] == subject]
-                    for i, r in df_s.iterrows():
-                        ca, cb, cc, cd = st.columns([2,2,2,1])
-                        ca.markdown(f"**{r['Grade']}/20**")
-                        cb.caption(f"Coef {r['Coefficient']}")
-                        cc.caption(r['Type'])
-                        if cd.button("❌", key=f"d_{r['ID']}"):
-                            ws_g.delete_rows(int(r['real_idx'])); st.rerun()
+            t, d = st.columns([3, 1]); nt = t.text_input("Tâche"); nd = d.date_input("Date")
+            if st.button("Ajouter"): sh.worksheet("Tasks").append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
 
-    # TAB 3 : TÂCHES
-    with tab3:
-        if sh:
-            ws_t = sh.worksheet("Tasks")
-            ct, cd, cb = st.columns([3, 2, 1])
-            nt, nd = ct.text_input("Tâche", key=f"nt_{subject}"), cd.date_input("Date", key=f"nd_{subject}")
-            cb.write(""); cb.write("")
-            if cb.button("Ajouter", key=f"bt_{subject}"):
-                ws_t.append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
-            
-            recs = ws_t.get_all_records()
-            if recs:
-                df = pd.DataFrame(recs)
-                df = df[(df['Subject'] == subject) & (df['Status'] == 'À faire')]
-                for i, r in df.iterrows():
-                    c_chk, c_info = st.columns([1, 10])
-                    if c_chk.checkbox("", key=f"c_{r['ID']}"):
-                        cell = ws_t.find(r['ID'])
-                        ws_t.update_cell(cell.row, 4, "Fait"); st.rerun()
-                    d_show = f"📅 {r['Due_Date']}" if r["Due_Date"] else ""
-                    c_info.markdown(f"{r['Task']} <span style='color:#e11d48; margin-left:10px; font-size:0.8em'>{d_show}</span>", unsafe_allow_html=True)
-
-# --- PAGE 4: FOCUS ROOM ---
 def focus_room_page():
-    st.markdown(f"### ⏳ Focus Room")
-    st.markdown("Configure ta session et ne ferme pas cet onglet.")
-    
-    c1, c2, c3, c4 = st.columns(4)
-    work_min = c1.number_input("Travail (min)", 1, 60, 25)
-    short_break = c2.number_input("Pause courte", 1, 15, 5)
-    long_break = c3.number_input("Pause longue", 5, 30, 15)
-    cycles = c4.number_input("Cycles", 1, 10, 4)
-
-    col_center, _ = st.columns([1, 2])
-    start_btn = col_center.button("▶ LANCER LA SESSION", type="primary")
-
-    placeholder = st.empty()
-
-    if start_btn:
-        total_cycles = cycles
-        for i in range(total_cycles):
-            for remaining in range(work_min * 60, -1, -1):
-                mins, secs = divmod(remaining, 60)
-                with placeholder.container():
-                    st.markdown(f"<p class='timer-label'>💻 CYCLE {i+1}/{total_cycles} • FOCUS</p>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
-                    st.progress((work_min*60 - remaining) / (work_min*60))
-                time.sleep(1)
-            if i < total_cycles - 1:
-                is_long = (i + 1) % 4 == 0
-                break_time = long_break if is_long else short_break
-                label = "☕ PAUSE LONGUE" if is_long else "🍵 PAUSE COURTE"
-                for remaining in range(break_time * 60, -1, -1):
-                    mins, secs = divmod(remaining, 60)
-                    with placeholder.container():
-                        st.markdown(f"<p class='timer-label'>{label}</p>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='timer-display' style='color:{TEAL}; border-color:{NAVY}'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
-                    time.sleep(1)
-        st.balloons(); st.success("Session terminée ! Bravo 🎉")
+    st.title("⏳ Focus Room")
+    if st.button("▶ LANCER 25 MIN", type="primary"):
+        with st.empty():
+            for i in range(25*60, -1, -1):
+                st.markdown(f"<h1 style='text-align:center; font-size:80px;'>{i//60:02}:{i%60:02}</h1>", unsafe_allow_html=True); time.sleep(1)
+        st.balloons()
 
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
-    selected_page = sidebar_menu()
+    page = sidebar_menu()
+    if page != st.session_state.current_view: st.session_state.current_view = page; st.session_state.selected_subject = None; st.rerun()
     
-    if selected_page != st.session_state.current_view:
-        st.session_state.current_view = selected_page
-        st.session_state.selected_subject = None
-        st.rerun()
-
     if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
         if st.session_state.selected_subject: subject_detail_page(sh, drive, st.session_state.selected_subject)
