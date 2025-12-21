@@ -58,7 +58,7 @@ st.markdown(f"""
     /* KPI Cards */
     .kpi-card {{
         background-color: white;
-        padding: 25px; /* Un peu plus d'espace */
+        padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
         border-left: 8px solid {NAVY};
@@ -240,12 +240,20 @@ def sidebar_menu():
     with st.sidebar:
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
+        
+        # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
+        options = ["Dashboard", "Mes Cours", "Focus Room"]
+        try:
+            default_ix = options.index(st.session_state.current_view)
+        except:
+            default_ix = 0
+
         selected = option_menu(
             menu_title=None,
-            options=["Dashboard", "Mes Cours", "Focus Room"],
+            options=options,
             icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
             menu_icon="cast",
-            default_index=0,
+            default_index=default_ix, # Synchronisation ici
             styles={
                 "container": {"padding": "0!important", "background-color": NAVY},
                 "icon": {"color": "#94a3b8", "font-size": "14px"}, 
@@ -275,7 +283,7 @@ def dashboard_page(sh):
                 global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
                 s1_avg_display = f"{global_avg:.2f}/20"
 
-    # --- NOUVELLE DISPOSITION KPI (2 COLONNES) ---
+    # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
     
     # 1. BLOC MOYENNE
@@ -285,11 +293,12 @@ def dashboard_page(sh):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
-    # 2. BLOC FOCUS ROOM (REMPLACE LES TACHES/SEMAINE)
+    # 2. BLOC FOCUS ROOM (LIEN CORRIGÉ)
     with c2:
         focus_txt = "Prêt à bosser ?"
         if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
         kpi_card("Focus Room", focus_txt, "Productivité Maximale", GOLD, "⏳")
+        # Le bouton met à jour la vue et force le rechargement pour que la sidebar suive
         if st.button("🚀 Accéder à la Focus Room", use_container_width=True):
             st.session_state.current_view = "Focus Room"
             st.rerun()
@@ -313,23 +322,17 @@ def dashboard_page(sh):
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
             if not edited_df.empty:
-                # Calcul robuste qui gère la division par zéro si les deux coefs sont nuls
+                # Calcul robuste division par 0
                 total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
-                # On évite la division par 0 en remplaçant 0 par 1 temporairement (juste pour ne pas crash, la ligne sera filtrée après)
                 safe_total_coef = total_coef.replace(0, 1)
-                
                 edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
-                
-                # Si coef total est 0, moyenne est 0
                 edited_df.loc[total_coef == 0, 'Moyenne'] = 0
                 
                 st.write("**Résultats calculés :**")
                 st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
                 
-                # Moyenne Générale (en ignorant les matières à coef 0)
                 valid_avg = edited_df.loc[total_coef > 0, 'Moyenne']
                 avg_sem = valid_avg.mean() if not valid_avg.empty else 0
-                
                 st.metric(f"Moyenne Générale {key_suffix}", f"{avg_sem:.2f}/20")
                 return edited_df
 
@@ -358,21 +361,25 @@ def dashboard_page(sh):
         if sh:
             try:
                 tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
-                if not tasks.empty:
-                    for i, row in tasks[tasks['Status'] == 'À faire'].head(4).iterrows():
+                # Filtrer les tâches "À faire"
+                todo_tasks = tasks[tasks['Status'] == 'À faire'] if not tasks.empty else pd.DataFrame()
+                
+                if not todo_tasks.empty:
+                    for i, row in todo_tasks.head(4).iterrows():
                         with st.container(border=True):
                             c_chk, c_tx = st.columns([1, 4])
                             if c_chk.button("✔", key=f"d_{row['ID']}"):
                                 cell = sh.worksheet("Tasks").find(row['ID'])
                                 sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
                             c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span>", unsafe_allow_html=True)
+                else:
+                    # MESSAGE QUAND VIDE
+                    st.success("🎉 Rien à faire ! Profite de ta pause.")
             except: st.info("Aucune tâche.")
 
 # --- PAGE 2: GRILLE DES COURS (S2 SEULEMENT) ---
 def courses_grid_page():
     st.markdown("### 📚 Mes Modules S2"); st.write("")
-    
-    # ICI : ON N'UTILISE QUE DEFAULT_S2 (Correction demandée)
     cols = st.columns(3)
     for index, subject in enumerate(DEFAULT_S2):
         with cols[index % 3]:
@@ -445,6 +452,7 @@ if __name__ == "__main__":
     sh, drive = get_google_services()
     selected_page = sidebar_menu()
     
+    # Synchronisation Navigation : Si la sidebar change, on met à jour la vue
     if selected_page != st.session_state.current_view:
         st.session_state.current_view = selected_page
         st.session_state.selected_subject = None
