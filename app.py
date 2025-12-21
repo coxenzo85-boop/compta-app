@@ -146,6 +146,19 @@ DEFAULT_S2 = [
 SUBJECTS_CONFIG = {s: {"cat": "Cours", "color": NAVY, "icon": "book"} for s in DEFAULT_S1 + DEFAULT_S2}
 SUBJECTS = list(SUBJECTS_CONFIG.keys())
 
+# --- LIENS NOTEBOOK LM PERSONNALISÉS ---
+NOTEBOOK_LINKS = {
+    "Organisation et SI": "https://notebooklm.google.com/notebook/dcf2d45c-bba9-4abd-b028-b73fa041fbe0",
+    "Droit Pénal Affaires": "https://notebooklm.google.com/notebook/456cd0d2-9229-4337-986d-08fbe6392520",
+    "Droit du Crédit": "https://notebooklm.google.com/notebook/40ef1076-44e7-4a25-8e16-54004ff16292",
+    "Droit des Sociétés 2": "https://notebooklm.google.com/notebook/afd6663d-db08-4303-aca7-20e8bfbc449f",
+    "Diagnostic Général": "https://notebooklm.google.com/notebook/e65d1578-ec56-4d08-ad8e-683c74df0c7e",
+    "Int. Financial Accounting": "https://notebooklm.google.com/notebook/ef2f1e79-3596-424a-8f53-20a465f4f035",
+    "Modélisation des Coûts": "https://notebooklm.google.com/notebook/3a5d9eb9-b9ae-4aae-a9d4-2fc6e5c22978",
+    "Compta Approfondie 2": "https://notebooklm.google.com/notebook/82f3bf4d-ed58-4d03-8174-3ade0bf36dfb",
+    "Diagnostic Financier": "https://notebooklm.google.com/notebook/1f05199b-f66b-4f68-92e2-f0158a780c7e"
+}
+
 # --- CONNEXIONS GOOGLE ---
 @st.cache_resource 
 def get_google_services():
@@ -258,6 +271,7 @@ def sidebar_menu():
         st.markdown(f"<h2 style='color:white; text-align:center;'>L3 CCA <span style='color:{TEAL}'>HUB</span></h2>", unsafe_allow_html=True)
         st.write("")
         
+        # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
         options = ["Dashboard", "Mes Cours", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
@@ -292,6 +306,7 @@ def dashboard_page(sh):
         df_sim = load_simulator_data(sh)
         if not df_sim.empty:
             df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
+            # Calcul sécurisé
             df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
             valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
             if valid_coefs.any():
@@ -336,6 +351,7 @@ def dashboard_page(sh):
         def display_sim_tab(df_semestre, key_suffix):
             edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
             if not edited_df.empty:
+                # Calcul robuste division par 0
                 total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
                 safe_total_coef = total_coef.replace(0, 1)
                 edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
@@ -398,24 +414,27 @@ def courses_grid_page():
             if st.button(f"Ouvrir {subject}", key=f"btn_{subject}", use_container_width=True):
                 st.session_state.selected_subject = subject; st.rerun()
 
-# --- PAGE 3: DÉTAIL MATIÈRE (AVEC NOTEBOOKLM) ---
+# --- PAGE 3: DÉTAIL MATIÈRE (AVEC NOTEBOOKLM PERSONNALISÉ) ---
 def subject_detail_page(sh, drive, subject):
     if st.button("← Retour"): st.session_state.selected_subject = None; st.rerun()
     st.title(subject)
     tab1, tab2 = st.tabs(["📂 Fichiers & NotebookLM", "✅ Tâches"])
     
     with tab1:
-        # BLOC NOTEBOOK LM
+        # 1. BLOC NOTEBOOK LM (LIEN DYNAMIQUE)
         with st.container(border=True):
             c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
             with c_logo: st.markdown("## 🧠")
             with c_txt:
                 st.markdown(f"**Booster de révision NotebookLM**")
-                st.caption(f"Transforme les documents du dossier *'{subject}'* en podcast, quiz et résumés.")
+                st.caption(f"Accède au carnet de notes dédié pour *{subject}*.")
             with c_btn:
-                st.link_button("↗ Ouvrir NotebookLM", "https://notebooklm.google.com/", type="primary", use_container_width=True)
+                # Récupère le lien spécifique ou le lien par défaut
+                notebook_url = NOTEBOOK_LINKS.get(subject, "https://notebooklm.google.com/")
+                st.link_button("↗ Ouvrir NotebookLM", notebook_url, type="primary", use_container_width=True)
         st.write("")
 
+        # 2. GESTION DRIVE
         if drive:
             fid = get_or_create_subject_folder(drive, subject)
             up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
