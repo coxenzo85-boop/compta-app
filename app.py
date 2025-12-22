@@ -515,6 +515,62 @@ def dashboard_page(sh):
                             c_txt.caption(f"{r['Task']} ({r['Subject']})")
                 else: st.success("Tout est fait ! 🎉")
             except: st.info("Aucune tâche.")
+
+    st.write("")
+    c_left, c_right = st.columns([2, 1])
+    with c_left:
+        st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
+        # --- RÉINTÉGRATION DE L'AJOUT ET DE LA SUPPRESSION D'ÉVÉNEMENTS ---
+        events = get_combined_events(ICS_CALENDAR_URL, sh)
+        calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
+        
+        if sh:
+            with st.expander("➕ Ajouter une session de révision"):
+                with st.form("add_event_form"):
+                    # --- ALIGNEMENT HORIZONTAL ---
+                    c_titre, c_date, c_deb, c_fin = st.columns([2, 1, 1, 1])
+                    
+                    with c_titre: 
+                        ev_title = st.text_input("Matière/Titre")
+                    with c_date:
+                        ev_date = st.date_input("Date")
+                    with c_deb:
+                        ev_start = st.time_input("Début", dt_time(18,0))
+                    with c_fin:
+                        ev_end = st.time_input("Fin", dt_time(19,0))
+                    
+                    if st.form_submit_button("Ajouter au Calendrier"):
+                        try:
+                            start = datetime.combine(ev_date, ev_start).isoformat()
+                            end = datetime.combine(ev_date, ev_end).isoformat()
+                            # Ajout dans la feuille 'Events'
+                            sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
+                            st.success("Ajouté !")
+                            time.sleep(1); st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur : {e}")
+
+            with st.expander("🗑️ Gérer mes événements perso"):
+                try:
+                    # On ne liste que les événements perso (ceux dans le Sheet, pas l'ICS)
+                    df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
+                    if not df_ev.empty:
+                        for i, row in df_ev.iterrows():
+                            c_t, c_b = st.columns([4, 1])
+                            c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
+                            if c_b.button("❌", key=f"del_ev_{row['ID']}"):
+                                try:
+                                    ids = sh.worksheet("Events").col_values(1) # ID est en colonne 1
+                                    idx = ids.index(str(row['ID']).strip()) + 1
+                                    sh.worksheet("Events").delete_rows(idx)
+                                    st.success("Supprimé !")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except: st.error("Introuvable")
+                            st.divider()
+                    else: st.info("Aucun événement personnel ajouté.")
+                except Exception as e:
+                    pass # Silencieux si pas d'onglet Events ou vide
         # ------------------------------------------------------------------
     
     with c_right:
