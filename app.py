@@ -324,37 +324,51 @@ def sidebar_menu():
     return selected
 
 # --- PAGES ---
+# --- REMPLACE TOUTE LA FONCTION dashboard_page PAR CELLE-CI ---
 def dashboard_page(sh):
-    # HEADER
     st.markdown(f"### 👋 Dashboard Étudiant")
     st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
 
     df_sim = pd.DataFrame()
     s1_avg_display = "0.0/20"
+    s2_avg_display = "En attente" # Par défaut, pour indiquer que c'est progressif
     
     if sh:
-        df_sim = load_simulator_data(sh)
-        if not df_sim.empty:
-            s2 = df_sim[df_sim['Semestre'] == 'S2'].copy()
+        try:
+            df_sim = load_simulator_data(sh)
+            if not df_sim.empty:
+                # --- CALCUL S1 (Classique) ---
+                s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
+                s1['Total_Coef'] = s1['Coef_CC'] + s1['Coef_Partiel']
+                s1['Moy_Mat'] = ((s1['Note_CC']*s1['Coef_CC']) + (s1['Note_Partiel']*s1['Coef_Partiel'])) / s1['Total_Coef'].replace(0, 1)
+                
+                valid_s1 = s1[s1['Total_Coef'] > 0]
+                if not valid_s1.empty:
+                    s1_avg_display = f"{valid_s1['Moy_Mat'].mean():.2f}/20"
+
+                # --- CALCUL S2 (Progressif - LA MODIF EST ICI) ---
+                s2 = df_sim[df_sim['Semestre'] == 'S2'].copy()
                 s2['Total_Coef'] = s2['Coef_CC'] + s2['Coef_Partiel']
                 
-                # FILTRE : On ne garde que les matières commencées (Total Coef > 0)
+                # On ne garde que les matières où l'étudiant a mis des coefficients > 0
                 valid_s2 = s2[s2['Total_Coef'] > 0].copy()
                 
                 if not valid_s2.empty:
-                    valid_s2['Moy'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
-                    s1_avg_display = f"{valid_s2['Moy'].mean():.2f}/20" # Note: J'ai remis s1_avg_display car c'est la variable utilisée dans ta carte HTML plus bas
+                    # Calcul de la moyenne pour ces matières valides seulement
+                    valid_s2['Moy_Mat'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
+                    # Moyenne générale du semestre (moyenne des moyennes)
+                    s2_avg_display = f"{valid_s2['Moy_Mat'].mean():.2f}/20"
                 else:
-                    s1_avg_display = "En attente"
+                    s2_avg_display = "En attente" # Aucune matière commencée
+        except: pass
 
     # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
     
-    # 1. BLOC MOYENNE
+    # 1. BLOC MOYENNE (Affiche S2 en priorité)
     with c1:
-        kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
-        # --- REMPLACER LE BOUTON ICI ---
-        if st.button("🧮 Ouvrir/Fermer Simulateur", key="btn_sim_fix", use_container_width=True):
+        kpi_card("Moyenne S2 (Progressive)", s2_avg_display, f"Moyenne S1 : {s1_avg_display}", NAVY, "🎓")
+        if st.button("🧮 Ouvrir le Simulateur de Notes", key="btn_sim_top", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
@@ -363,54 +377,58 @@ def dashboard_page(sh):
         focus_txt = "Prêt à bosser ?"
         if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
         kpi_card("Focus Room", focus_txt, "Productivité Maximale", GOLD, "⏳")
-        if st.button("🚀 Accéder à la Focus Room", use_container_width=True):
+        if st.button("🚀 Accéder à la Focus Room", key="btn_focus_top", use_container_width=True):
             st.session_state.current_view = "Focus Room"
             st.rerun()
 
+    # --- SIMULATEUR ---
     if st.session_state.show_simulator and not df_sim.empty:
         st.write("")
         st.markdown(f"### 🧮 Simulateur de Notes")
-        st.info("💡 ASTUCE : Si une matière n'a pas de CC, mets le 'Coef CC' à 0.")
+        st.info("💡 ASTUCE S2 : Si tu n'as pas encore de note, laisse les Coefs à 0. La matière sera ignorée du calcul.")
         
-        tab_s1, tab_s2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
-        
-        cols_config = {
-            "Matiere": st.column_config.TextColumn("Matière", disabled=True, width="medium"),
-            "Semestre": None,
-            "Coef_CC": st.column_config.NumberColumn("Coef CC", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
-            "Coef_Partiel": st.column_config.NumberColumn("Coef Partiel", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
-            "Note_CC": st.column_config.NumberColumn("Note CC", min_value=0, max_value=20, step=0.5, format="%.1f", width="small"),
-            "Note_Partiel": st.column_config.NumberColumn("Note Partiel", min_value=0, max_value=20, step=0.5, format="%.1f", width="small")
-        }
+        try:
+            tab_s1, tab_s2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
+            
+            # Configuration des colonnes
+            cols_config = {
+                "Matiere": st.column_config.TextColumn("Matière", disabled=True, width="medium"),
+                "Semestre": None,
+                "Coef_CC": st.column_config.NumberColumn("Coef CC", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
+                "Coef_Partiel": st.column_config.NumberColumn("Coef Partiel", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
+                "Note_CC": st.column_config.NumberColumn("Note CC", min_value=0, max_value=20, step=0.5, format="%.1f", width="small"),
+                "Note_Partiel": st.column_config.NumberColumn("Note Partiel", min_value=0, max_value=20, step=0.5, format="%.1f", width="small")
+            }
 
-        def display_sim_tab(df_semestre, key_suffix):
-            edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
-            if not edited_df.empty:
-                # Calcul robuste division par 0
-                total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
-                safe_total_coef = total_coef.replace(0, 1)
-                edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
-                edited_df.loc[total_coef == 0, 'Moyenne'] = 0
+            def display_sim_tab(df_semestre, key_suffix):
+                # Affichage de l'éditeur
+                edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
                 
-                st.write("**Résultats calculés :**")
-                st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
+                if not edited_df.empty:
+                    # Calcul visuel "Live" dans le tableau
+                    t_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
+                    # On évite la division par 0 juste pour l'affichage
+                    edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / t_coef.replace(0, 1)
+                    # Si coef est 0, on force la moyenne à 0 visuellement
+                    edited_df.loc[t_coef == 0, 'Moyenne'] = 0
+                    
+                    st.write("**Résultats calculés :**")
+                    st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
+                    return edited_df
+
+            with tab_s1: edited_s1 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S1'], "S1")
+            with tab_s2: edited_s2 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S2'], "S2")
+
+            if st.button("💾 Sauvegarder dans Google Sheets", type="primary"):
+                # Nettoyage des colonnes temporaires avant sauvegarde
+                clean_s1 = edited_s1.drop(columns=['Moyenne', 'Total_Coef', 'Moy_Mat'], errors='ignore')
+                clean_s2 = edited_s2.drop(columns=['Moyenne', 'Total_Coef', 'Moy_Mat'], errors='ignore')
+                full_df = pd.concat([clean_s1, clean_s2])
                 
-                valid_avg = edited_df.loc[total_coef > 0, 'Moyenne']
-                avg_sem = valid_avg.mean() if not valid_avg.empty else 0
-                st.metric(f"Moyenne Générale {key_suffix}", f"{avg_sem:.2f}/20")
-                return edited_df
-
-        with tab_s1: edited_s1 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S1'], "S1")
-        with tab_s2: edited_s2 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S2'], "S2")
-
-        if st.button("💾 Sauvegarder dans Google Sheets", type="primary"):
-            clean_s1 = edited_s1.drop(columns=['Moyenne'], errors='ignore')
-            clean_s2 = edited_s2.drop(columns=['Moyenne'], errors='ignore')
-            full_df = pd.concat([clean_s1, clean_s2])
-            save_simulator_data(sh, full_df)
-            st.success("✅ Sauvegardé !")
-            time.sleep(1)
-            st.rerun()
+                save_simulator_data(sh, full_df)
+                st.success("✅ Sauvegardé ! La moyenne S2 est à jour.")
+                time.sleep(1); st.rerun()
+        except Exception as e: st.error(f"Erreur Simulateur: {e}")
         st.markdown("---")
 
     st.write("")
@@ -468,7 +486,6 @@ def dashboard_page(sh):
                     else: st.info("Aucun événement personnel ajouté.")
                 except Exception as e:
                     pass # Silencieux si pas d'onglet Events ou vide
-        # ------------------------------------------------------------------
     
     with c_right:
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
@@ -480,7 +497,7 @@ def dashboard_page(sh):
                 if not todo_tasks.empty:
                     for i, row in todo_tasks.head(4).iterrows():
                         with st.container(border=True):
-                            c_chk, c_tx = st.columns([1, 4])
+                            c_chk, c_txt = st.columns([1, 4])
                             if c_chk.button("✔", key=f"d_{row['ID']}"):
                                 cell = sh.worksheet("Tasks").find(row['ID'])
                                 sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
