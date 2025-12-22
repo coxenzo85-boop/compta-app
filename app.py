@@ -515,7 +515,10 @@ def subject_detail_page(sh, drive, subject):
         st.write("")
 
         # 2. GESTION DRIVE
-        if up and st.button("Envoyer sur Drive"): 
+        if drive:
+            fid = get_or_create_subject_folder(drive, subject)
+            up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
+            if up and st.button("Envoyer sur Drive"): 
                 # On appelle la nouvelle fonction qui renvoie Vrai ou Faux
                 if upload_file_to_drive(drive, up, fid):
                     st.success("Envoyé avec succès !")
