@@ -276,12 +276,17 @@ def load_simulator_data(sh):
         ws = sh.worksheet("Simulateur")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
-        if df.empty:
+        
+        # Si le tableau est vide ou s'il manque la colonne Semestre, on le réinitialise
+        if df.empty or 'Semestre' not in df.columns:
             init_data = []
             for m in DEFAULT_S1: init_data.append({"Matiere": m, "Semestre": "S1", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
             for m in DEFAULT_S2: init_data.append({"Matiere": m, "Semestre": "S2", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
             df = pd.DataFrame(init_data)
+            # On force la mise à jour du Sheet pour réparer les colonnes
+            ws.clear()
             ws.update([df.columns.values.tolist()] + df.values.tolist())
+            
         return df
     except: return pd.DataFrame()
 
@@ -324,6 +329,23 @@ def sidebar_menu():
     return selected
 
 # --- PAGES ---
+
+# --- FONCTIONS MANQUANTES À AJOUTER ICI ---
+
+def get_exams(sh):
+    try:
+        ws = sh.worksheet("Exams")
+        return pd.DataFrame(ws.get_all_records())
+    except: return pd.DataFrame(columns=["Matiere", "Date"])
+
+def save_exams(sh, df):
+    try:
+        ws = sh.worksheet("Exams")
+        ws.clear()
+        # On remet les en-têtes + les données
+        ws.update([df.columns.values.tolist()] + df.values.tolist())
+    except: pass
+
 # --- REMPLACE TOUTE LA FONCTION dashboard_page PAR CECI ---
 def dashboard_page(sh):
     st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
@@ -609,7 +631,7 @@ def subject_detail_page(sh, drive, subject):
     tab1, tab2 = st.tabs(["📂 Fichiers & IA", "✅ Tâches"])
     
     with tab1:
-        # --- BLOC NOTEBOOK LM ---
+        # Bloc NotebookLM
         with st.container(border=True):
             c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
             with c_logo: st.markdown("## 🧠")
@@ -621,42 +643,34 @@ def subject_detail_page(sh, drive, subject):
                 st.link_button("↗ Ouvrir NotebookLM", notebook_url, type="primary", use_container_width=True)
         st.write("")
 
-        # --- GESTION DRIVE (MODE LECTURE SEULE) ---
+        # Bloc Drive
         if drive:
-            # On récupère l'ID du dossier
             fid = get_or_create_subject_folder(drive, subject)
             
-            if fid:
-                # Lien direct pour uploader manuellement
-                folder_url = f"https://drive.google.com/drive/folders/{fid}"
-                st.info("💡 Pour ajouter des cours, dépose-les directement dans le dossier Drive ci-dessous.")
-                st.markdown(f"""
-                <a href="{folder_url}" target="_blank" style="text-decoration:none;">
-                    <div style="background-color:#E8F0FE; color:#1967D2; padding:10px; border-radius:8px; text-align:center; font-weight:bold; border:1px solid #D2E3FC; margin-bottom:20px;">
-                        📂 Ouvrir le dossier "{subject}" sur Google Drive
-                    </div>
-                </a>
-                """, unsafe_allow_html=True)
-
-                # Affichage des fichiers existants
-                st.markdown("### 📄 Mes documents disponibles")
-                files = list_drive_files(drive, fid)
-                if files:
-                    for f in files:
-                        icon_url = f.get('iconLink', 'https://ssl.gstatic.com/docs/doclist/images/icon_10_generic_list.png')
-                        st.markdown(f"""
-                        <div class="file-card">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <img src='{icon_url}' width='20'>
-                                <span style='font-weight:bold; color:{NAVY}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;'>{f['name']}</span>
-                            </div>
-                            <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
+            # Zone d'upload
+            up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
+            if up and st.button("Envoyer sur Drive"): 
+                if upload_file_to_drive(drive, up, fid):
+                    st.success("Envoyé avec succès !")
+                    time.sleep(1)
+                    st.rerun()
+            
+            # Liste des fichiers
+            st.markdown("### 📄 Mes documents")
+            files = list_drive_files(drive, fid)
+            if files:
+                for f in files:
+                    st.markdown(f"""
+                    <div class="file-card">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <img src='{f.get('iconLink')}' width='20'>
+                            <span style='font-weight:bold; color:{NAVY};'>{f['name']}</span>
                         </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.warning("Aucun fichier détecté. Ajoute-les via le lien ci-dessus !")
+                        <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
-                st.error("Impossible de trouver le dossier sur le Drive.")
+                st.info("Aucun fichier. Upload tes cours pour commencer !")
         else:
             st.warning("Connexion Drive inactive.")
 
