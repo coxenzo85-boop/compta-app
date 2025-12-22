@@ -325,23 +325,44 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
-    # HEADER
-    st.markdown(f"### 👋 Dashboard Étudiant")
-    st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
+    st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
 
+    # --- 1. CALCULS DES MOYENNES (S1 & S2 PROGRESSIF) ---
+    s1_display = "0.00/20"
+    s2_display = "En attente" # Par défaut
+    
     df_sim = pd.DataFrame()
-    s1_avg_display = "0.0/20"
     
     if sh:
-        df_sim = load_simulator_data(sh)
-        if not df_sim.empty:
-            df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-            # Calcul sécurisé
-            df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
-            valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
-            if valid_coefs.any():
-                global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
-                s1_avg_display = f"{global_avg:.2f}/20"
+        try:
+            df_sim = load_simulator_data(sh)
+            if not df_sim.empty:
+                # --- CALCUL S1 (Classique) ---
+                s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
+                s1['Total_Coef'] = s1['Coef_CC'] + s1['Coef_Partiel']
+                # On remplace 0 par 1 juste pour éviter la division par zéro technique, mais on filtre après
+                s1['Moy'] = ((s1['Note_CC']*s1['Coef_CC']) + (s1['Note_Partiel']*s1['Coef_Partiel'])) / s1['Total_Coef'].replace(0, 1)
+                
+                # On ne garde que les vraies matières
+                valid_s1 = s1[s1['Total_Coef'] > 0]
+                if not valid_s1.empty:
+                    s1_display = f"{valid_s1['Moy'].mean():.2f}/20"
+
+                # --- CALCUL S2 (Progressif) ---
+                s2 = df_sim[df_sim['Semestre'] == 'S2'].copy()
+                s2['Total_Coef'] = s2['Coef_CC'] + s2['Coef_Partiel']
+                
+                # LOGIQUE PROGRESSIVE ICI :
+                # On ne garde QUE les matières où la somme des coefs est > 0.
+                # Si tu mets Coef_CC=0 et Coef_Partiel=0, la matière est ignorée.
+                valid_s2 = s2[s2['Total_Coef'] > 0].copy()
+                
+                if not valid_s2.empty:
+                    valid_s2['Moy'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
+                    s2_display = f"{valid_s2['Moy'].mean():.2f}/20"
+                else:
+                    s2_display = "En attente" # Aucune note rentrée pour l'instant
+        except: pass
 
     # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
