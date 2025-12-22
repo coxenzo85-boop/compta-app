@@ -325,204 +325,163 @@ def sidebar_menu():
 
 # --- PAGES ---
 def dashboard_page(sh):
-    st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
+    # HEADER
+    st.markdown(f"### 👋 Dashboard Étudiant")
+    st.markdown(f"<p style='color:#64748b;'>{datetime.now().strftime('%d %B %Y')}</p>", unsafe_allow_html=True)
 
-    # --- 1. CALCULS DES MOYENNES (S1 & S2 PROGRESSIF) ---
-    s1_display = "0.00/20"
-    s2_display = "En attente" # Par défaut
-    
     df_sim = pd.DataFrame()
+    s1_avg_display = "0.0/20"
     
     if sh:
-        try:
-            df_sim = load_simulator_data(sh)
-            if not df_sim.empty:
-                # --- CALCUL S1 (Classique) ---
-                s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-                s1['Total_Coef'] = s1['Coef_CC'] + s1['Coef_Partiel']
-                # On remplace 0 par 1 juste pour éviter la division par zéro technique, mais on filtre après
-                s1['Moy'] = ((s1['Note_CC']*s1['Coef_CC']) + (s1['Note_Partiel']*s1['Coef_Partiel'])) / s1['Total_Coef'].replace(0, 1)
-                
-                # On ne garde que les vraies matières
-                valid_s1 = s1[s1['Total_Coef'] > 0]
-                if not valid_s1.empty:
-                    s1_display = f"{valid_s1['Moy'].mean():.2f}/20"
+        df_sim = load_simulator_data(sh)
+        if not df_sim.empty:
+            df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
+            # Calcul sécurisé
+            df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
+            valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
+            if valid_coefs.any():
+                global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
+                s1_avg_display = f"{global_avg:.2f}/20"
 
-                # --- CALCUL S2 (Progressif) ---
-                s2 = df_sim[df_sim['Semestre'] == 'S2'].copy()
-                s2['Total_Coef'] = s2['Coef_CC'] + s2['Coef_Partiel']
-                
-                # LOGIQUE PROGRESSIVE ICI :
-                # On ne garde QUE les matières où la somme des coefs est > 0.
-                # Si tu mets Coef_CC=0 et Coef_Partiel=0, la matière est ignorée.
-                valid_s2 = s2[s2['Total_Coef'] > 0].copy()
-                
-                if not valid_s2.empty:
-                    valid_s2['Moy'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
-                    s2_display = f"{valid_s2['Moy'].mean():.2f}/20"
-                else:
-                    s2_display = "En attente" # Aucune note rentrée pour l'instant
-        except: pass
-
-    # --- 2. AFFICHAGE KPI ---
+    # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
     
+    # 1. BLOC MOYENNE
     with c1:
-        st.markdown(f"""
-        <div class="dashboard-card">
-            <div style="display:flex; justify-content:space-between;">
-                <div>
-                    <div class="card-label">MOYENNE S2 (PROGRESSIVE)</div>
-                    <div class="card-value">{s2_display}</div>
-                </div>
-                <div style="background:#F1F5F9; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;">🎓</div>
-            </div>
-            <div class="card-footer">
-                <span style="background:#DCFCE7; color:#166534; padding:2px 8px; border-radius:6px; font-size:11px;">Moyenne S1 : {s1_display}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Bouton d'ouverture du simulateur
-        if st.button("🧮 Ouvrir/Fermer Simulateur", key="btn_sim_toggle", use_container_width=True):
+        kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
+        if st.button("🧮 Ouvrir le Simulateur de Notes", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
+    # 2. BLOC FOCUS ROOM
     with c2:
-        status_txt = "Session en cours..." if st.session_state.timer_active else "Prêt à bosser ?"
-        status_icon = "🔥" if st.session_state.timer_active else "⏳"
-        st.markdown(f"""
-        <div class="dashboard-card" style="border-left: 8px solid {GOLD};">
-            <div style="display:flex; justify-content:space-between;">
-                <div><div class="card-label">FOCUS ROOM</div><div class="card-value">{status_txt}</div></div>
-                <div style="background:#FEF3C7; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;">{status_icon}</div>
-            </div>
-            <div class="card-footer" style="color:{GOLD};">Productivité Maximale</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("🚀 Accéder à la Focus Room", key="btn_focus_go", use_container_width=True):
-            st.session_state.current_view = "Focus Room"; st.rerun()
+        focus_txt = "Prêt à bosser ?"
+        if st.session_state.get("pomodoro"): focus_txt = "🔥 Session en cours..."
+        kpi_card("Focus Room", focus_txt, "Productivité Maximale", GOLD, "⏳")
+        if st.button("🚀 Accéder à la Focus Room", use_container_width=True):
+            st.session_state.current_view = "Focus Room"
+            st.rerun()
 
-    # --- 3. SECTION SIMULATEUR ---
-    if st.session_state.show_simulator and sh:
+    if st.session_state.show_simulator and not df_sim.empty:
         st.write("")
-        st.info("ℹ️ **Mode d'emploi S2 :** Laisse les coefficients à 0 pour les matières sans note. Elles seront ignorées du calcul.")
+        st.markdown(f"### 🧮 Simulateur de Notes")
+        st.info("💡 ASTUCE : Si une matière n'a pas de CC, mets le 'Coef CC' à 0.")
         
-        try:
-            tab1, tab2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
-            cfg = {"Matiere": st.column_config.TextColumn(disabled=True), "Semestre": None}
-            
-            def show_sim_table(df_sem, k):
-                # Table éditable
-                edited = st.data_editor(df_sem, column_config=cfg, hide_index=True, key=k, use_container_width=True)
-                
-                # Calcul visuel en direct dans le tableau
-                t = edited['Coef_CC'] + edited['Coef_Partiel']
-                # Calcul moyenne ligne (avec protection div/0)
-                edited['Moyenne'] = ((edited['Note_CC']*edited['Coef_CC']) + (edited['Note_Partiel']*edited['Coef_Partiel'])) / t.replace(0, 1)
-                # Si coef total est 0, on force l'affichage à 0 pour faire propre
-                edited.loc[t == 0, 'Moyenne'] = 0
-                
-                st.write("**Aperçu des résultats :**")
-                st.dataframe(edited[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
-                return edited
+        tab_s1, tab_s2 = st.tabs(["📘 Semestre 1", "📙 Semestre 2"])
+        
+        cols_config = {
+            "Matiere": st.column_config.TextColumn("Matière", disabled=True, width="medium"),
+            "Semestre": None,
+            "Coef_CC": st.column_config.NumberColumn("Coef CC", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
+            "Coef_Partiel": st.column_config.NumberColumn("Coef Partiel", min_value=0, max_value=10, step=0.5, format="%.1f", width="small"),
+            "Note_CC": st.column_config.NumberColumn("Note CC", min_value=0, max_value=20, step=0.5, format="%.1f", width="small"),
+            "Note_Partiel": st.column_config.NumberColumn("Note Partiel", min_value=0, max_value=20, step=0.5, format="%.1f", width="small")
+        }
 
-            with tab1: e1 = show_sim_table(df_sim[df_sim['Semestre']=='S1'], "e1")
-            with tab2: e2 = show_sim_table(df_sim[df_sim['Semestre']=='S2'], "e2")
-            
-            if st.button("💾 Sauvegarder tout", type="primary"):
-                # Nettoyage des colonnes temporaires avant envoi Google Sheets
-                c1 = e1.drop(columns=['Moyenne', 'Total_Coef', 'Moy'], errors='ignore')
-                c2 = e2.drop(columns=['Moyenne', 'Total_Coef', 'Moy'], errors='ignore')
-                full = pd.concat([c1, c2])
-                save_simulator_data(sh, full)
-                st.success("✅ Sauvegardé ! La moyenne S2 est à jour.")
-                time.sleep(1); st.rerun()
+        def display_sim_tab(df_semestre, key_suffix):
+            edited_df = st.data_editor(df_semestre, column_config=cols_config, hide_index=True, use_container_width=True, key=f"editor_{key_suffix}")
+            if not edited_df.empty:
+                # Calcul robuste division par 0
+                total_coef = edited_df['Coef_CC'] + edited_df['Coef_Partiel']
+                safe_total_coef = total_coef.replace(0, 1)
+                edited_df['Moyenne'] = ((edited_df['Note_CC'] * edited_df['Coef_CC']) + (edited_df['Note_Partiel'] * edited_df['Coef_Partiel'])) / safe_total_coef
+                edited_df.loc[total_coef == 0, 'Moyenne'] = 0
                 
-        except Exception as e: st.error(f"Erreur Simulateur: {e}")
+                st.write("**Résultats calculés :**")
+                st.dataframe(edited_df[['Matiere', 'Moyenne']].style.format({"Moyenne": "{:.2f}"}).background_gradient(subset=['Moyenne'], cmap="RdYlGn", vmin=0, vmax=20), use_container_width=True)
+                
+                valid_avg = edited_df.loc[total_coef > 0, 'Moyenne']
+                avg_sem = valid_avg.mean() if not valid_avg.empty else 0
+                st.metric(f"Moyenne Générale {key_suffix}", f"{avg_sem:.2f}/20")
+                return edited_df
+
+        with tab_s1: edited_s1 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S1'], "S1")
+        with tab_s2: edited_s2 = display_sim_tab(df_sim[df_sim['Semestre'] == 'S2'], "S2")
+
+        if st.button("💾 Sauvegarder dans Google Sheets", type="primary"):
+            clean_s1 = edited_s1.drop(columns=['Moyenne'], errors='ignore')
+            clean_s2 = edited_s2.drop(columns=['Moyenne'], errors='ignore')
+            full_df = pd.concat([clean_s1, clean_s2])
+            save_simulator_data(sh, full_df)
+            st.success("✅ Sauvegardé !")
+            time.sleep(1)
+            st.rerun()
         st.markdown("---")
 
-    # --- 4. RESTE DU DASHBOARD (Calendrier & ToDo) ---
     st.write("")
-    cl, cr = st.columns([2, 1])
-    
-    with cl:
+    c_left, c_right = st.columns([2, 1])
+    with c_left:
         st.markdown(f"#### <span style='color:{NAVY}'>🗓️ Emploi du Temps</span>", unsafe_allow_html=True)
+        # --- RÉINTÉGRATION DE L'AJOUT ET DE LA SUPPRESSION D'ÉVÉNEMENTS ---
         events = get_combined_events(ICS_CALENDAR_URL, sh)
-        calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "500px", "locale": "fr"}, custom_css=".fc-event{font-size:10px;}")
+        calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
         
         if sh:
             with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event_form"):
+                    # --- ALIGNEMENT HORIZONTAL ---
                     c_titre, c_date, c_deb, c_fin = st.columns([2, 1, 1, 1])
-                    with c_titre: ev_title = st.text_input("Titre")
-                    with c_date: ev_date = st.date_input("Date")
-                    with c_deb: ev_start = st.time_input("Début", dt_time(18,0))
-                    with c_fin: ev_end = st.time_input("Fin", dt_time(19,0))
                     
-                    if st.form_submit_button("Ajouter"):
+                    with c_titre: 
+                        ev_title = st.text_input("Matière/Titre")
+                    with c_date:
+                        ev_date = st.date_input("Date")
+                    with c_deb:
+                        ev_start = st.time_input("Début", dt_time(18,0))
+                    with c_fin:
+                        ev_end = st.time_input("Fin", dt_time(19,0))
+                    
+                    if st.form_submit_button("Ajouter au Calendrier"):
                         try:
                             start = datetime.combine(ev_date, ev_start).isoformat()
                             end = datetime.combine(ev_date, ev_end).isoformat()
+                            # Ajout dans la feuille 'Events'
                             sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
-                            st.success("Ajouté !"); time.sleep(1); st.rerun()
-                        except: st.error("Erreur ajout")
+                            st.success("Ajouté !")
+                            time.sleep(1); st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur : {e}")
 
-            with st.expander("🗑️ Supprimer un événement perso"):
+            with st.expander("🗑️ Gérer mes événements perso"):
                 try:
+                    # On ne liste que les événements perso (ceux dans le Sheet, pas l'ICS)
                     df_ev = pd.DataFrame(sh.worksheet("Events").get_all_records())
                     if not df_ev.empty:
                         for i, row in df_ev.iterrows():
-                            c1, c2 = st.columns([4,1])
-                            c1.markdown(f"**{row['Title']}** ({row['Start']})")
-                            if c2.button("Suppr.", key=f"del_{row['ID']}"):
-                                ids = sh.worksheet("Events").col_values(1)
-                                sh.worksheet("Events").delete_rows(ids.index(str(row['ID'])) + 1)
-                                st.rerun()
-                    else: st.info("Aucun événement.")
-                except: pass
-
-    with cr:
-        st.markdown(f"#### <span style='color:{NAVY}'>⏳ Examens</span>", unsafe_allow_html=True)
-        if sh:
-            df_ex = get_exams(sh)
-            with st.expander("Gérer"):
-                edited_exams = st.data_editor(df_ex, num_rows="dynamic", hide_index=True, key="ex_edit")
-                if not df_ex.equals(edited_exams): save_exams(sh, edited_exams); st.rerun()
-            
-            today = date.today()
-            if not edited_exams.empty:
-                try:
-                    edited_exams['DateObj'] = pd.to_datetime(edited_exams['Date']).dt.date
-                    edited_exams = edited_exams.sort_values('DateObj')
-                    html_content = "<div style='background:white; border-radius:12px; border:1px solid #E2E8F0; padding:0 15px;'>"
-                    count = 0
-                    for _, row in edited_exams.iterrows():
-                        delta = (row['DateObj'] - today).days
-                        if delta >= 0 and count < 5:
-                            col = RED_URGENT if delta < 7 else ORANGE_REV if delta < 14 else TEAL
-                            html_content += f"<div class='exam-row'><span style='font-weight:bold; color:{NAVY}; font-size:13px;'>{row['Matiere']}</span><span class='exam-tag' style='background:{col};'>J-{delta}</span></div>"
-                            count += 1
-                    html_content += "</div>"
-                    if count > 0: st.markdown(html_content, unsafe_allow_html=True)
-                    else: st.info("Aucun examen proche.")
-                except: st.error("Erreur date exams")
-            else: st.info("Ajoute des examens !")
-
-        st.write(""); st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do</span>", unsafe_allow_html=True)
+                            c_t, c_b = st.columns([4, 1])
+                            c_t.markdown(f"**{row['Title']}** <span style='color:grey; font-size:12px'>{row['Start']}</span>", unsafe_allow_html=True)
+                            if c_b.button("❌", key=f"del_ev_{row['ID']}"):
+                                try:
+                                    ids = sh.worksheet("Events").col_values(1) # ID est en colonne 1
+                                    idx = ids.index(str(row['ID']).strip()) + 1
+                                    sh.worksheet("Events").delete_rows(idx)
+                                    st.success("Supprimé !")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except: st.error("Introuvable")
+                            st.divider()
+                    else: st.info("Aucun événement personnel ajouté.")
+                except Exception as e:
+                    pass # Silencieux si pas d'onglet Events ou vide
+        # ------------------------------------------------------------------
+    
+    with c_right:
+        st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh:
             try:
                 tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
-                todo = tasks[tasks['Status'] == 'À faire'] if not tasks.empty else pd.DataFrame()
-                if not todo.empty:
-                    for i, r in todo.head(4).iterrows():
+                todo_tasks = tasks[tasks['Status'] == 'À faire'] if not tasks.empty else pd.DataFrame()
+                
+                if not todo_tasks.empty:
+                    for i, row in todo_tasks.head(4).iterrows():
                         with st.container(border=True):
-                            c_chk, c_txt = st.columns([1, 4])
-                            if c_chk.button("✔", key=f"d_{r['ID']}"):
-                                ws_t = sh.worksheet("Tasks")
-                                ws_t.update_cell(ws_t.find(r['ID']).row, 4, "Fait"); st.rerun()
-                            c_txt.caption(f"{r['Task']} ({r['Subject']})")
-                else: st.success("Tout est fait ! 🎉")
+                            c_chk, c_tx = st.columns([1, 4])
+                            if c_chk.button("✔", key=f"d_{row['ID']}"):
+                                cell = sh.worksheet("Tasks").find(row['ID'])
+                                sh.worksheet("Tasks").update_cell(cell.row, 4, "Fait"); st.rerun()
+                            c_tx.markdown(f"**{row['Task']}**<br><span style='color:grey; font-size:12px'>{row['Subject']}</span>", unsafe_allow_html=True)
+                else:
+                    st.success("🎉 Rien à faire ! Profite de ta pause.")
             except: st.info("Aucune tâche.")
 
 # --- PAGE 2: GRILLE DES COURS (S2 SEULEMENT) ---
