@@ -276,12 +276,19 @@ def load_simulator_data(sh):
         ws = sh.worksheet("Simulateur")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
-        if df.empty:
+        
+        # FIX: Si le tableau est vide ou qu'il manque la colonne 'Semestre', on le réinitialise
+        if df.empty or 'Semestre' not in df.columns:
             init_data = []
+            # On utilise les listes globales définies au début du fichier
             for m in DEFAULT_S1: init_data.append({"Matiere": m, "Semestre": "S1", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
             for m in DEFAULT_S2: init_data.append({"Matiere": m, "Semestre": "S2", "Coef_CC": 1, "Coef_Partiel": 2, "Note_CC": 0, "Note_Partiel": 0})
+            
             df = pd.DataFrame(init_data)
+            # On force la sauvegarde pour réparer le Sheet
+            ws.clear()
             ws.update([df.columns.values.tolist()] + df.values.tolist())
+            
         return df
     except: return pd.DataFrame()
 
@@ -329,7 +336,7 @@ def sidebar_menu():
 def dashboard_page(sh):
     st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
 
-    # --- 1. CALCUL DES MOYENNES (S1 & S2 PROGRESSIF) ---
+    # --- 1. CALCULS DES MOYENNES (S1 & S2 PROGRESSIF) ---
     s1_display = "0.00/20"
     s2_display = "En attente"
     df_sim = pd.DataFrame()
@@ -353,8 +360,6 @@ def dashboard_page(sh):
                 if not valid_s2.empty:
                     valid_s2['Moy'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
                     s2_display = f"{valid_s2['Moy'].mean():.2f}/20"
-                else:
-                    s2_display = "En attente"
         except: pass
 
     # --- 2. KPI CARDS ---
@@ -395,7 +400,7 @@ def dashboard_page(sh):
         except: st.error("Erreur Simulateur")
         st.markdown("---")
 
-    # --- 4. CONTENU PRINCIPAL (CALENDRIER, ANALYTICS, EXAMS, TODO) ---
+    # --- 4. CONTENU PRINCIPAL ---
     st.write("")
     cl, cr = st.columns([2, 1])
     
@@ -437,86 +442,42 @@ def dashboard_page(sh):
                         else: st.info("Vide.")
                     except: pass
 
-        # B. ANALYTICS (NOUVEAU BLOC ROBUSTE)
+        # B. ANALYTICS
         st.write("")
         st.markdown(f"#### <span style='color:{NAVY}'>📊 Mes Stats de Focus</span>", unsafe_allow_html=True)
         if sh:
             try:
-                # 1. On récupère toutes les valeurs brutes (sans se soucier des en-têtes)
                 raw_data = sh.worksheet("History").get_all_values()
-                
-                # 2. Si on a des données (plus que juste l'en-tête ou vide)
                 if len(raw_data) > 0:
-                    # On crée le DF et on force les noms de colonnes pour éviter les erreurs
-                    # On suppose que l'ordre d'insertion est toujours : Date, Action, Subject, Value
-                    # (C'est ce que fait la fonction save_to_history)
                     df_history = pd.DataFrame(raw_data, columns=["Date", "Action", "Subject", "Value"])
-                    
-                    # 3. On filtre uniquement les lignes 'Pomodoro'
                     pomodoros = df_history[df_history['Action'] == 'Pomodoro'].copy()
-                    
                     if not pomodoros.empty:
-                        # 4. Conversion de la colonne 'Value' (Durée) en nombres
                         pomodoros['Value'] = pd.to_numeric(pomodoros['Value'], errors='coerce')
-                        
-                        # 5. Création du graphique
-                        fig = px.pie(
-                            pomodoros, 
-                            values='Value', 
-                            names='Subject', 
-                            title=None,
-                            color_discrete_sequence=px.colors.sequential.Tealgrn,
-                            hole=0.4
-                        )
+                        fig = px.pie(pomodoros, values='Value', names='Subject', color_discrete_sequence=px.colors.sequential.Tealgrn, hole=0.4)
                         fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250)
                         st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Petit récap textuel
                         total_h = pomodoros['Value'].sum() / 60
                         st.caption(f"⏱️ Total travaillé : **{total_h:.1f} heures**")
-                    else:
-                        st.info("Aucune session de focus terminée pour l'instant.")
-                else:
-                    st.info("Historique vide.")
-            except Exception as e:
-                # En cas de problème (ex: onglet History inexistant), on affiche un message discret
-                st.warning("Impossible de charger les stats (Vérifie l'onglet 'History').")
+                    else: st.info("Pas encore de stats.")
+                else: st.info("Historique vide.")
+            except: pass
 
     with cr:
-        # C. EXAMENS
-        st.markdown(f"#### <span style='color:{NAVY}'>⏳ Examens</span>", unsafe_allow_html=True)
-        if sh:
-            df_ex = get_exams(sh)
-            with st.expander("Gérer"):
-                ed_ex = st.data_editor(df_ex, num_rows="dynamic", hide_index=True, key="ex_ed")
-                if not df_ex.equals(ed_ex): save_exams(sh, ed_ex); st.rerun()
-            
-            if not ed_ex.empty:
-                try:
-                    ed_ex['DateObj'] = pd.to_datetime(ed_ex['Date']).dt.date
-                    ed_ex = ed_ex.sort_values('DateObj')
-                    for _, r in ed_ex.iterrows():
-                        delta = (r['DateObj'] - date.today()).days
-                        if delta >= 0:
-                            col = RED_URGENT if delta < 7 else ORANGE_REV if delta < 14 else TEAL
-                            st.markdown(f"<div class='exam-row'><span style='font-weight:bold;color:{NAVY}'>{r['Matiere']}</span><span class='exam-tag' style='background:{col}'>J-{delta}</span></div>", unsafe_allow_html=True)
-                except: st.error("Format date invalide")
-            else: st.info("Aucun examen.")
-
-        # D. TODO
-        st.write(""); st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do</span>", unsafe_allow_html=True)
+        # C. TO-DO LIST (REMPLACE LES EXAMENS)
+        st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh:
             try:
                 tasks = pd.DataFrame(sh.worksheet("Tasks").get_all_records())
                 todo = tasks[tasks['Status'] == 'À faire']
                 if not todo.empty:
-                    for i, r in todo.head(5).iterrows():
-                        c_chk, c_txt = st.columns([1, 5])
-                        if c_chk.button("✔", key=f"do_{r['ID']}"):
-                            sh.worksheet("Tasks").update_cell(sh.worksheet("Tasks").find(r['ID']).row, 4, "Fait"); st.rerun()
-                        c_txt.caption(f"{r['Task']} ({r['Subject']})")
-                else: st.success("Rien à faire !")
-            except: st.info("Liste vide.")
+                    for i, r in todo.head(10).iterrows(): # Affiche les 10 premières tâches
+                        with st.container(border=True):
+                            c_chk, c_txt = st.columns([1, 5])
+                            if c_chk.button("✔", key=f"do_{r['ID']}"):
+                                sh.worksheet("Tasks").update_cell(sh.worksheet("Tasks").find(r['ID']).row, 4, "Fait"); st.rerun()
+                            c_txt.markdown(f"**{r['Task']}**<br><span style='color:grey; font-size:11px'>{r['Subject']}</span>", unsafe_allow_html=True)
+                else: st.success("Rien à faire ! 🎉")
+            except: st.info("Liste vide ou erreur chargement.")
 
 # --- PAGE 2: GRILLE DES COURS (S2 SEULEMENT) ---
 def courses_grid_page():
