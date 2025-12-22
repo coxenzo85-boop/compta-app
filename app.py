@@ -405,20 +405,29 @@ def dashboard_page(sh):
         
         if sh:
             with st.expander("➕ Ajouter une session de révision"):
-                with st.form("add_event"):
-                    ev_title, c_d, c_h1, c_h2 = st.text_input("Matière/Titre"), st.columns(3)[0], st.columns(3)[1], st.columns(3)[2]
-                    ev_date, ev_start, ev_end = c_d.date_input("Date"), c_h1.time_input("Début", dt_time(18,0)), c_h2.time_input("Fin", dt_time(19,0))
+                with st.form("add_event_form"):
+                    # --- ALIGNEMENT HORIZONTAL ---
+                    c_titre, c_date, c_deb, c_fin = st.columns([2, 1, 1, 1])
+                    
+                    with c_titre: 
+                        ev_title = st.text_input("Matière/Titre")
+                    with c_date:
+                        ev_date = st.date_input("Date")
+                    with c_deb:
+                        ev_start = st.time_input("Début", dt_time(18,0))
+                    with c_fin:
+                        ev_end = st.time_input("Fin", dt_time(19,0))
+                    
                     if st.form_submit_button("Ajouter au Calendrier"):
                         try:
-                            start, end = datetime.combine(ev_date, ev_start).isoformat(), datetime.combine(ev_date, ev_end).isoformat()
+                            start = datetime.combine(ev_date, ev_start).isoformat()
+                            end = datetime.combine(ev_date, ev_end).isoformat()
                             # Ajout dans la feuille 'Events'
-                            # Structure attendue : ID | Title | Start | End | Type
                             sh.worksheet("Events").append_row([str(uuid.uuid4())[:8], ev_title, start, end, "Revision"])
                             st.success("Ajouté !")
-                            time.sleep(1)
-                            st.rerun()
+                            time.sleep(1); st.rerun()
                         except Exception as e:
-                            st.error(f"Erreur d'ajout : {e}. Vérifie que l'onglet 'Events' existe dans ton Google Sheet.")
+                            st.error(f"Erreur : {e}")
 
             with st.expander("🗑️ Gérer mes événements perso"):
                 try:
