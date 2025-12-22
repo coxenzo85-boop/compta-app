@@ -438,7 +438,34 @@ def dashboard_page(sh):
         # --- RÉINTÉGRATION DE L'AJOUT ET DE LA SUPPRESSION D'ÉVÉNEMENTS ---
         events = get_combined_events(ICS_CALENDAR_URL, sh)
         calendar(events=events, options={"headerToolbar": {"left": "today prev,next", "center": "title", "right": "timeGridWeek,dayGridMonth"}, "initialView": "timeGridWeek", "height": "550px", "locale": "fr"}, custom_css=".fc-event { border-radius: 4px; font-size: 11px; }")
-        
+
+        if sh:
+        try:
+            # On récupère l'historique
+            history_df = get_history_stats(sh)
+            
+            # On vérifie si on a des données Pomodoro
+            if not history_df.empty:
+                # On filtre uniquement les lignes 'Pomodoro' (Colonnes: Date, Action, Subject, Value)
+                # Assure-toi que les colonnes de ton GSheet History sont bien : Date | Action | Subject | Value
+                # Si elles n'ont pas d'en-tête, on utilise les index : 0, 1, 2, 3
+                history_df.columns = ["Date", "Action", "Matiere", "Duree"]
+                pomodoros = history_df[history_df['Action'] == 'Pomodoro']
+                
+                if not pomodoros.empty:
+                    st.write("")
+                    st.markdown("##### 📈 Mes Stats de Focus")
+                    
+                    # Graphique Camembert ou Barres
+                    fig = px.pie(pomodoros, values='Duree', names='Matiere', 
+                                 color_discrete_sequence=px.colors.sequential.Tealgrn,
+                                 hole=0.4)
+                    fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=250)
+                    st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            # st.error(f"Pas encore de stats : {e}") 
+            pass
+            
         if sh:
             with st.expander("➕ Ajouter une session de révision"):
                 with st.form("add_event_form"):
