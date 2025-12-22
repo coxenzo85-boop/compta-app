@@ -200,8 +200,21 @@ def list_drive_files(drive_service, folder_id):
     except: return []
 
 def upload_file_to_drive(drive_service, uploaded_file, folder_id):
-    media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), mimetype=uploaded_file.type, resumable=True)
-    drive_service.files().create(body={'name': uploaded_file.name, 'parents': [folder_id]}, media_body=media).execute()
+    try:
+        # On convertit le fichier en flux binaire
+        file_content = io.BytesIO(uploaded_file.getvalue())
+        
+        # --- LE FIX EST ICI : resumable=False ---
+        # Cela force un envoi direct au lieu de couper le fichier en morceaux (ce qui causait ton erreur)
+        media = MediaIoBaseUpload(file_content, mimetype=uploaded_file.type, resumable=False)
+        
+        file_metadata = {'name': uploaded_file.name, 'parents': [folder_id]}
+        
+        drive_service.files().create(body=file_metadata, media_body=media).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erreur Upload : {e}")
+        return False
 
 @st.cache_data(ttl=3600, show_spinner=False) 
 def get_ics_events_cached(ics_url):
@@ -502,12 +515,12 @@ def subject_detail_page(sh, drive, subject):
         st.write("")
 
         # 2. GESTION DRIVE
-        if drive:
-            fid = get_or_create_subject_folder(drive, subject)
-            up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
-            if up and st.button("Envoyer sur Drive"): 
-                upload_file_to_drive(drive, up, fid)
-                st.success("Envoyé !"); time.sleep(1); st.rerun()
+        if up and st.button("Envoyer sur Drive"): 
+                # On appelle la nouvelle fonction qui renvoie Vrai ou Faux
+                if upload_file_to_drive(drive, up, fid):
+                    st.success("Envoyé avec succès !")
+                    time.sleep(1)
+                    st.rerun()
             
             st.markdown("### 📄 Mes documents")
             files = list_drive_files(drive, fid)
