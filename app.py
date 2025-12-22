@@ -335,13 +335,17 @@ def dashboard_page(sh):
     if sh:
         df_sim = load_simulator_data(sh)
         if not df_sim.empty:
-            df_s1 = df_sim[df_sim['Semestre'] == 'S1'].copy()
-            # Calcul sécurisé
-            df_s1['Moyenne_Matiere'] = ((df_s1['Note_CC'] * df_s1['Coef_CC']) + (df_s1['Note_Partiel'] * df_s1['Coef_Partiel'])) / (df_s1['Coef_CC'] + df_s1['Coef_Partiel'])
-            valid_coefs = (df_s1['Coef_CC'] + df_s1['Coef_Partiel']) > 0
-            if valid_coefs.any():
-                global_avg = df_s1.loc[valid_coefs, 'Moyenne_Matiere'].mean()
-                s1_avg_display = f"{global_avg:.2f}/20"
+            s2 = df_sim[df_sim['Semestre'] == 'S2'].copy()
+                s2['Total_Coef'] = s2['Coef_CC'] + s2['Coef_Partiel']
+                
+                # FILTRE : On ne garde que les matières commencées (Total Coef > 0)
+                valid_s2 = s2[s2['Total_Coef'] > 0].copy()
+                
+                if not valid_s2.empty:
+                    valid_s2['Moy'] = ((valid_s2['Note_CC']*valid_s2['Coef_CC']) + (valid_s2['Note_Partiel']*valid_s2['Coef_Partiel'])) / valid_s2['Total_Coef']
+                    s1_avg_display = f"{valid_s2['Moy'].mean():.2f}/20" # Note: J'ai remis s1_avg_display car c'est la variable utilisée dans ta carte HTML plus bas
+                else:
+                    s1_avg_display = "En attente"
 
     # --- KPI 2 COLONNES ---
     c1, c2 = st.columns(2)
@@ -349,7 +353,8 @@ def dashboard_page(sh):
     # 1. BLOC MOYENNE
     with c1:
         kpi_card("Moyenne S1 (Estimée)", s1_avg_display, "Basé sur le simulateur", NAVY, "🎓")
-        if st.button("🧮 Ouvrir le Simulateur de Notes", use_container_width=True):
+        # --- REMPLACER LE BOUTON ICI ---
+        if st.button("🧮 Ouvrir/Fermer Simulateur", key="btn_sim_fix", use_container_width=True):
             st.session_state.show_simulator = not st.session_state.show_simulator
             st.rerun()
 
