@@ -498,10 +498,10 @@ def courses_grid_page():
 def subject_detail_page(sh, drive, subject):
     if st.button("← Retour"): st.session_state.selected_subject = None; st.rerun()
     st.title(subject)
-    tab1, tab2 = st.tabs(["📂 Fichiers & NotebookLM", "✅ Tâches"])
+    tab1, tab2 = st.tabs(["📂 Fichiers & IA", "✅ Tâches"])
     
     with tab1:
-        # 1. BLOC NOTEBOOK LM (LIEN DYNAMIQUE)
+        # --- BLOC NOTEBOOK LM ---
         with st.container(border=True):
             c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
             with c_logo: st.markdown("## 🧠")
@@ -509,37 +509,46 @@ def subject_detail_page(sh, drive, subject):
                 st.markdown(f"**Booster de révision NotebookLM**")
                 st.caption(f"Accède au carnet de notes dédié pour *{subject}*.")
             with c_btn:
-                # Récupère le lien spécifique ou le lien par défaut
                 notebook_url = NOTEBOOK_LINKS.get(subject, "https://notebooklm.google.com/")
                 st.link_button("↗ Ouvrir NotebookLM", notebook_url, type="primary", use_container_width=True)
         st.write("")
 
-        # 2. GESTION DRIVE
+        # --- GESTION DRIVE (MODE LECTURE SEULE) ---
         if drive:
+            # On récupère l'ID du dossier
             fid = get_or_create_subject_folder(drive, subject)
-            up = st.file_uploader("Ajouter un cours (PDF/Word)", key="up")
-            if up and st.button("Envoyer sur Drive"): 
-                # On appelle la nouvelle fonction qui renvoie Vrai ou Faux
-                if upload_file_to_drive(drive, up, fid):
-                    st.success("Envoyé avec succès !")
-                    time.sleep(1)
-                    st.rerun()
             
-            st.markdown("### 📄 Mes documents")
-            files = list_drive_files(drive, fid)
-            if files:
-                for f in files:
-                    st.markdown(f"""
-                    <div class="file-card">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <img src='{f.get('iconLink')}' width='20'>
-                            <span style='font-weight:bold; color:{NAVY};'>{f['name']}</span>
-                        </div>
-                        <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
+            if fid:
+                # Lien direct pour uploader manuellement
+                folder_url = f"https://drive.google.com/drive/folders/{fid}"
+                st.info("💡 Pour ajouter des cours, dépose-les directement dans le dossier Drive ci-dessous.")
+                st.markdown(f"""
+                <a href="{folder_url}" target="_blank" style="text-decoration:none;">
+                    <div style="background-color:#E8F0FE; color:#1967D2; padding:10px; border-radius:8px; text-align:center; font-weight:bold; border:1px solid #D2E3FC; margin-bottom:20px;">
+                        📂 Ouvrir le dossier "{subject}" sur Google Drive
                     </div>
-                    """, unsafe_allow_html=True)
+                </a>
+                """, unsafe_allow_html=True)
+
+                # Affichage des fichiers existants
+                st.markdown("### 📄 Mes documents disponibles")
+                files = list_drive_files(drive, fid)
+                if files:
+                    for f in files:
+                        icon_url = f.get('iconLink', 'https://ssl.gstatic.com/docs/doclist/images/icon_10_generic_list.png')
+                        st.markdown(f"""
+                        <div class="file-card">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <img src='{icon_url}' width='20'>
+                                <span style='font-weight:bold; color:{NAVY}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;'>{f['name']}</span>
+                            </div>
+                            <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.warning("Aucun fichier détecté. Ajoute-les via le lien ci-dessus !")
             else:
-                st.info("Aucun fichier. Upload tes cours pour commencer !")
+                st.error("Impossible de trouver le dossier sur le Drive.")
         else:
             st.warning("Connexion Drive inactive.")
 
