@@ -299,7 +299,98 @@ def save_simulator_data(sh, df):
         df_save = df[cols_to_save]
         ws.update([df_save.columns.values.tolist()] + df_save.values.tolist())
     except Exception as e: st.error(f"Erreur sauvegarde: {e}")
+# --- NOUVELLE PAGE : SUIVI CANDIDATURES ---
+def candidatures_page(sh):
+    st.markdown(f"### 🚀 Suivi Candidatures (Stage & Master)")
+    
+    # 1. Chargement / Initialisation des données
+    df = pd.DataFrame()
+    if sh:
+        try:
+            ws = sh.worksheet("Candidatures")
+            data = ws.get_all_records()
+            df = pd.DataFrame(data)
+        except:
+            # Création automatique de l'onglet s'il n'existe pas
+            try:
+                ws = sh.add_worksheet(title="Candidatures", rows="100", cols="20")
+                ws.append_row(["ID", "Organisation", "Type", "Poste", "Date_Envoi", "Statut", "Lien", "Notes"])
+                df = pd.DataFrame(columns=["ID", "Organisation", "Type", "Poste", "Date_Envoi", "Statut", "Lien", "Notes"])
+            except: st.error("Impossible de créer l'onglet 'Candidatures'. Fais-le manuellement dans ton Sheet.")
 
+    # 2. KPI (Statistiques)
+    if not df.empty:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total", len(df))
+        c2.metric("En attente", len(df[df['Statut'] == 'Envoyé']))
+        c3.metric("Entretiens", len(df[df['Statut'] == 'Entretien']))
+        # Petit calcul de taux de réponse
+        nb_pos = len(df[df['Statut'].isin(['Entretien', 'Accepté'])])
+        c4.metric("Taux Réponse", f"{(nb_pos/len(df)*100):.0f}%" if len(df)>0 else "0%")
+    
+    st.write("")
+
+    # 3. FORMULAIRE D'AJOUT RAPIDE
+    with st.expander("➕ Nouvelle Candidature", expanded=False):
+        with st.form("new_cand"):
+            c_org, c_typ, c_stat = st.columns(3)
+            org = c_org.text_input("Entreprise / Université")
+            typ = c_typ.selectbox("Type", ["Master", "Stage", "Alternance"])
+            stat = c_stat.selectbox("Statut", ["A faire", "Envoyé", "Entretien", "Refus", "Accepté"])
+            
+            c_pos, c_date = st.columns([2, 1])
+            poste = c_pos.text_input("Intitulé (ex: Master CCA, Contrôleur de gestion...)")
+            d_env = c_date.date_input("Date")
+            
+            note = st.text_area("Notes / Lien")
+            
+            if st.form_submit_button("Sauvegarder"):
+                if sh:
+                    sh.worksheet("Candidatures").append_row(
+                        [str(uuid.uuid4())[:8], org, typ, poste, str(d_env), stat, "", note]
+                    )
+                    st.success("Ajouté !"); time.sleep(1); st.rerun()
+
+    # 4. TABLEAU INTERACTIF (MODIFIABLE)
+    st.markdown("### 📋 Tableau de bord")
+    if not df.empty:
+        # Configuration des colonnes pour l'éditeur
+        column_config = {
+            "ID": None, # Masqué
+            "Lien": None,
+            "Organisation": st.column_config.TextColumn("Organisation", width="medium"),
+            "Type": st.column_config.SelectboxColumn("Type", options=["Master", "Stage", "Alternance"], width="small"),
+            "Statut": st.column_config.SelectboxColumn(
+                "Statut", 
+                options=["A faire", "Envoyé", "Entretien", "Refus", "Accepté"],
+                width="small",
+                required=True
+            ),
+            "Date_Envoi": st.column_config.DateColumn("Date"),
+            "Notes": st.column_config.TextColumn("Notes", width="large")
+        }
+        
+        edited_df = st.data_editor(
+            df, 
+            column_config=column_config, 
+            hide_index=True, 
+            use_container_width=True, 
+            num_rows="dynamic",
+            key="editor_candidatures"
+        )
+        
+        # Bouton de sauvegarde des modifications du tableau
+        if st.button("💾 Mettre à jour le tableau"):
+            if sh:
+                try:
+                    ws = sh.worksheet("Candidatures")
+                    ws.clear()
+                    ws.update([edited_df.columns.values.tolist()] + edited_df.values.tolist())
+                    st.success("Tableau mis à jour !")
+                    time.sleep(1); st.rerun()
+                except Exception as e: st.error(f"Erreur : {e}")
+    else:
+        st.info("Aucune candidature. Commence par en ajouter une !")
 # --- NAVIGATION ---
 def sidebar_menu():
     with st.sidebar:
@@ -307,7 +398,7 @@ def sidebar_menu():
         st.write("")
         
         # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
-        options = ["Dashboard", "Mes Cours", "Focus Room"]
+        options = ["Dashboard", "Mes Cours", "Candidatures", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
         except:
@@ -317,7 +408,7 @@ def sidebar_menu():
         selected = option_menu(
             menu_title=None,
             options=options,
-            icons=["speedometer2", "grid-3x3-gap", "hourglass-split"],
+            icons=["speedometer2", "book", "briefcase", "hourglass"], # Ajout de briefcase
             menu_icon="cast",
             default_index=default_ix, 
             styles={
@@ -661,8 +752,12 @@ if __name__ == "__main__":
         st.session_state.selected_subject = None
         st.rerun()
 
+    # --- DANS LE MAIN ---
     if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
         if st.session_state.selected_subject: subject_detail_page(sh, drive, st.session_state.selected_subject)
         else: courses_grid_page()
+    # AJOUTER CETTE LIGNE 👇
+    elif st.session_state.current_view == "Candidatures": candidatures_page(sh)
+    # --------------------
     elif st.session_state.current_view == "Focus Room": focus_room_page()
