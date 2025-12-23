@@ -352,12 +352,16 @@ def candidatures_page(sh):
                     st.success("Ajouté !"); time.sleep(1); st.rerun()
 
     # 4. TABLEAU INTERACTIF (MODIFIABLE)
+    # 4. TABLEAU INTERACTIF (CORRIGÉ)
     st.markdown("### 📋 Tableau de bord")
     if not df.empty:
-        # Configuration des colonnes pour l'éditeur
+        # On s'assure que toutes les colonnes sont des chaînes de caractères pour éviter les conflits
+        df = df.astype(str)
+
+        # Configuration simplifiée et robuste
         column_config = {
             "ID": None, # Masqué
-            "Lien": None,
+            "Lien": st.column_config.LinkColumn("Lien Offre"),
             "Organisation": st.column_config.TextColumn("Organisation", width="medium"),
             "Type": st.column_config.SelectboxColumn("Type", options=["Master", "Stage", "Alternance"], width="small"),
             "Statut": st.column_config.SelectboxColumn(
@@ -366,29 +370,35 @@ def candidatures_page(sh):
                 width="small",
                 required=True
             ),
-            "Date_Envoi": st.column_config.DateColumn("Date"),
+            "Date_Envoi": st.column_config.DateColumn("Date Envoi"),
             "Notes": st.column_config.TextColumn("Notes", width="large")
         }
         
-        edited_df = st.data_editor(
-            df, 
-            column_config=column_config, 
-            hide_index=True, 
-            use_container_width=True, 
-            num_rows="dynamic",
-            key="editor_candidatures"
-        )
-        
-        # Bouton de sauvegarde des modifications du tableau
-        if st.button("💾 Mettre à jour le tableau"):
-            if sh:
-                try:
-                    ws = sh.worksheet("Candidatures")
-                    ws.clear()
-                    ws.update([edited_df.columns.values.tolist()] + edited_df.values.tolist())
-                    st.success("Tableau mis à jour !")
-                    time.sleep(1); st.rerun()
-                except Exception as e: st.error(f"Erreur : {e}")
+        try:
+            edited_df = st.data_editor(
+                df, 
+                column_config=column_config, 
+                hide_index=True, 
+                use_container_width=True, 
+                num_rows="dynamic",
+                key="editor_candidatures_v2" # Nouvelle clé pour forcer le reset
+            )
+            
+            # Bouton de sauvegarde
+            if st.button("💾 Mettre à jour le tableau"):
+                if sh:
+                    try:
+                        ws = sh.worksheet("Candidatures")
+                        ws.clear()
+                        # On réécrit tout (En-têtes + Données)
+                        ws.update([edited_df.columns.values.tolist()] + edited_df.values.tolist())
+                        st.success("Tableau mis à jour !")
+                        time.sleep(1); st.rerun()
+                    except Exception as e: st.error(f"Erreur : {e}")
+        except Exception as e:
+            st.error(f"Erreur d'affichage du tableau : {e}. Essaie de rafraîchir la page.")
+            # Fallback simple si l'éditeur plante
+            st.dataframe(df)
     else:
         st.info("Aucune candidature. Commence par en ajouter une !")
 # --- NAVIGATION ---
