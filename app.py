@@ -400,7 +400,7 @@ def sidebar_menu():
         st.write("")
         
         # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
-        options = ["Dashboard", "Mes Cours", "Candidatures", "Focus Room"]
+        options = ["Dashboard", "Mes Cours", "Candidatures", "Analyse Fi", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
         except:
@@ -410,7 +410,7 @@ def sidebar_menu():
         selected = option_menu(
             menu_title=None,
             options=options,
-            icons=["speedometer2", "book", "briefcase", "hourglass"], # Ajout de briefcase
+            icons=["speedometer2", "book", "briefcase", "calculator", "hourglass"],
             menu_icon="cast",
             default_index=default_ix, 
             styles={
@@ -742,7 +742,116 @@ def focus_room_page():
                 st.session_state.timer_active = False
                 st.session_state.timer_end_time = None
                 st.rerun()
+# --- NOUVELLE PAGE : ANALYSE FINANCIÈRE ---
+def financial_analysis_page(sh):
+    st.markdown("### 📊 Diagnostic & Ratios Financiers")
+    st.markdown("Rentre les masses de ton bilan, l'outil calcule le reste.")
 
+    # --- ZONE DE SAISIE (GAUCHE) ---
+    with st.sidebar:
+        st.header("1. Compte de Résultat")
+        ca = st.number_input("Chiffre d'Affaires (CA)", value=0.0, step=1000.0)
+        rex = st.number_input("Résultat d'Exploitation (REX)", value=0.0, step=1000.0)
+        rn = st.number_input("Résultat Net (RN)", value=0.0, step=1000.0)
+        
+        st.header("2. Bilan (Haut)")
+        cap_propres = st.number_input("Capitaux Propres (CP)", value=0.0, step=1000.0)
+        dettes_fi = st.number_input("Dettes Financières (LMT)", value=0.0, step=1000.0)
+        actif_immo = st.number_input("Actif Immobilisé Brut", value=0.0, step=1000.0)
+        
+        st.header("3. Bilan (Bas - BFR)")
+        actif_circ = st.number_input("Actif Circulant (Exploit. + Hors Exploit.)", value=0.0, step=1000.0)
+        passif_circ = st.number_input("Passif Circulant (Dettes Fourn. + Fiscales)", value=0.0, step=1000.0)
+        
+        st.header("4. Trésorerie")
+        treso_actif = st.number_input("Trésorerie Actif", value=0.0, step=1000.0)
+        treso_passif = st.number_input("Trésorerie Passif (Concours Bancaires)", value=0.0, step=1000.0)
+
+    # --- CALCULS ---
+    # 1. Équilibre Fonctionnel
+    ressources_stables = cap_propres + dettes_fi
+    emplois_stables = actif_immo
+    frng = ressources_stables - emplois_stables
+    
+    bfr = actif_circ - passif_circ
+    tn = frng - bfr
+    # Vérification par la trésorerie directe
+    tn_verif = treso_actif - treso_passif
+
+    # 2. Ratios
+    # Rentabilité
+    roe = (rn / cap_propres * 100) if cap_propres > 0 else 0
+    # ROCE = REX (après impôt théorique souvent, ici brut pour simplifier) / Capitaux engagés
+    capitaux_engages = cap_propres + dettes_fi
+    roce = (rex / capitaux_engages * 100) if capitaux_engages > 0 else 0
+    marge_nette = (rn / ca * 100) if ca > 0 else 0
+    
+    # Structure
+    levier = dettes_fi / cap_propres if cap_propres > 0 else 0
+    autonomie = cap_propres / (cap_propres + dettes_fi + passif_circ + treso_passif) * 100 if (cap_propres + dettes_fi + passif_circ) > 0 else 0
+
+    # --- AFFICHAGE DASHBOARD ---
+    
+    # BLOC 1 : L'ÉQUILIBRE FINANCIER (FRNG / BFR / TN)
+    st.markdown("#### 🏗️ Équilibre Financier")
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.metric("FRNG (Fonds de Roulement)", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
+        st.caption("Ressources Stables - Emplois Stables")
+        
+    with c2:
+        st.metric("BFR (Besoin en Fonds de Roulement)", f"{bfr:,.0f} €", delta_color="inverse", delta="Besoin élevé" if bfr > 0 else "Ressource")
+        st.caption("Actif Circulant - Passif Circulant")
+        
+    with c3:
+        st.metric("TN (Trésorerie Nette)", f"{tn:,.0f} €", delta="Excédent" if tn > 0 else "Déficit")
+        st.caption(f"FRNG - BFR (Vérif: {tn_verif:,.0f} €)")
+
+    if tn < 0:
+        st.error("⚠️ **Alerte :** La Trésorerie est négative. Le FRNG ne suffit pas à financer le BFR.")
+    else:
+        st.success("✅ **Situation saine :** L'équilibre financier est respecté.")
+
+    st.markdown("---")
+
+    # BLOC 2 : RENTABILITÉ (ROE / ROCE)
+    st.markdown("#### 🚀 Performance & Rentabilité")
+    k1, k2, k3 = st.columns(3)
+    
+    with k1:
+        st.metric("Marge Nette", f"{marge_nette:.1f} %")
+        st.progress(min(marge_nette/100, 1.0))
+        
+    with k2:
+        st.metric("ROE (Rentabilité Financière)", f"{roe:.1f} %")
+        st.caption("Rentabilité pour l'actionnaire")
+        
+    with k3:
+        st.metric("ROCE (Rentabilité Économique)", f"{roce:.1f} %")
+        st.caption("Rentabilité des capitaux investis")
+
+    # BLOC 3 : RISQUE & STRUCTURE
+    st.markdown("---")
+    st.markdown("#### ⚖️ Risque & Solvabilité")
+    
+    r1, r2 = st.columns(2)
+    with r1:
+        color_lev = "normal" if levier < 1 else "off" # Rouge si > 1
+        st.metric("Levier Financier (Gearing)", f"{levier:.2f}", delta="Trop endetté" if levier > 1 else "Bon", delta_color="inverse")
+        st.caption("Dettes Fi. / Capitaux Propres (Doit être < 1)")
+        
+    with r2:
+        st.metric("Autonomie Financière", f"{autonomie:.1f} %")
+        st.caption("Part des CP dans le total Bilan")
+
+    # SECTION SAUVEGARDE
+    with st.expander("💾 Sauvegarder cette analyse"):
+        nom_analyse = st.text_input("Nom de l'entreprise / Cas")
+        if st.button("Archiver dans l'historique"):
+            if sh and nom_analyse:
+                save_to_history(sh, "Analyse Fi", nom_analyse, f"ROE: {roe:.1f}% | TN: {tn}")
+                st.success("Sauvegardé !")
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
@@ -754,12 +863,13 @@ if __name__ == "__main__":
         st.session_state.selected_subject = None
         st.rerun()
 
-    # --- DANS LE MAIN ---
+    # --- DANS LE MAIN (En bas du fichier) ---
     if st.session_state.current_view == "Dashboard": dashboard_page(sh)
     elif st.session_state.current_view == "Mes Cours":
         if st.session_state.selected_subject: subject_detail_page(sh, drive, st.session_state.selected_subject)
         else: courses_grid_page()
-    # AJOUTER CETTE LIGNE 👇
     elif st.session_state.current_view == "Candidatures": candidatures_page(sh)
+    # AJOUTER CETTE LIGNE 👇
+    elif st.session_state.current_view == "Analyse Fi": financial_analysis_page(sh)
     # --------------------
     elif st.session_state.current_view == "Focus Room": focus_room_page()
