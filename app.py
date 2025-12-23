@@ -303,7 +303,7 @@ def save_simulator_data(sh, df):
 def candidatures_page(sh):
     st.markdown(f"### 🚀 Suivi Candidatures (Stage & Master)")
     
-    # 1. Chargement / Initialisation des données
+    # 1. Chargement
     df = pd.DataFrame()
     if sh:
         try:
@@ -311,26 +311,26 @@ def candidatures_page(sh):
             data = ws.get_all_records()
             df = pd.DataFrame(data)
         except:
-            # Création automatique de l'onglet s'il n'existe pas
+            # Création onglet si inexistant
             try:
                 ws = sh.add_worksheet(title="Candidatures", rows="100", cols="20")
-                ws.append_row(["ID", "Organisation", "Type", "Poste", "Date_Envoi", "Statut", "Lien", "Notes"])
-                df = pd.DataFrame(columns=["ID", "Organisation", "Type", "Poste", "Date_Envoi", "Statut", "Lien", "Notes"])
-            except: st.error("Impossible de créer l'onglet 'Candidatures'. Fais-le manuellement dans ton Sheet.")
+                header = ["ID", "Organisation", "Type", "Poste", "Date_Envoi", "Statut", "Lien", "Notes"]
+                ws.append_row(header)
+                df = pd.DataFrame(columns=header)
+            except: pass
 
-    # 2. KPI (Statistiques)
+    # 2. KPI
     if not df.empty:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total", len(df))
         c2.metric("En attente", len(df[df['Statut'] == 'Envoyé']))
         c3.metric("Entretiens", len(df[df['Statut'] == 'Entretien']))
-        # Petit calcul de taux de réponse
         nb_pos = len(df[df['Statut'].isin(['Entretien', 'Accepté'])])
         c4.metric("Taux Réponse", f"{(nb_pos/len(df)*100):.0f}%" if len(df)>0 else "0%")
     
     st.write("")
 
-    # 3. FORMULAIRE D'AJOUT RAPIDE
+    # 3. FORMULAIRE
     with st.expander("➕ Nouvelle Candidature", expanded=False):
         with st.form("new_cand"):
             c_org, c_typ, c_stat = st.columns(3)
@@ -339,10 +339,9 @@ def candidatures_page(sh):
             stat = c_stat.selectbox("Statut", ["A faire", "Envoyé", "Entretien", "Refus", "Accepté"])
             
             c_pos, c_date = st.columns([2, 1])
-            poste = c_pos.text_input("Intitulé (ex: Master CCA, Contrôleur de gestion...)")
-            d_env = c_date.date_input("Date")
-            
-            note = st.text_area("Notes / Lien")
+            poste = c_pos.text_input("Intitulé")
+            d_env = c_date.date_input("Date Envoi")
+            note = st.text_area("Notes")
             
             if st.form_submit_button("Sauvegarder"):
                 if sh:
@@ -351,26 +350,21 @@ def candidatures_page(sh):
                     )
                     st.success("Ajouté !"); time.sleep(1); st.rerun()
 
-    # 4. TABLEAU INTERACTIF (MODIFIABLE)
-    # 4. TABLEAU INTERACTIF (CORRIGÉ)
+    # 4. TABLEAU (CORRIGÉ)
     st.markdown("### 📋 Tableau de bord")
     if not df.empty:
-        # On s'assure que toutes les colonnes sont des chaînes de caractères pour éviter les conflits
-        df = df.astype(str)
+        # --- LA CORRECTION EST ICI ---
+        # On force la conversion de la colonne texte en objets Date
+        if "Date_Envoi" in df.columns:
+            df["Date_Envoi"] = pd.to_datetime(df["Date_Envoi"], errors="coerce").dt.date
 
-        # Configuration simplifiée et robuste
         column_config = {
-            "ID": None, # Masqué
-            "Lien": st.column_config.LinkColumn("Lien Offre"),
+            "ID": None,
+            "Lien": st.column_config.LinkColumn("Lien"),
             "Organisation": st.column_config.TextColumn("Organisation", width="medium"),
             "Type": st.column_config.SelectboxColumn("Type", options=["Master", "Stage", "Alternance"], width="small"),
-            "Statut": st.column_config.SelectboxColumn(
-                "Statut", 
-                options=["A faire", "Envoyé", "Entretien", "Refus", "Accepté"],
-                width="small",
-                required=True
-            ),
-            "Date_Envoi": st.column_config.DateColumn("Date Envoi"),
+            "Statut": st.column_config.SelectboxColumn("Statut", options=["A faire", "Envoyé", "Entretien", "Refus", "Accepté"], width="small", required=True),
+            "Date_Envoi": st.column_config.DateColumn("Date Envoi", format="DD/MM/YYYY"),
             "Notes": st.column_config.TextColumn("Notes", width="large")
         }
         
@@ -381,24 +375,22 @@ def candidatures_page(sh):
                 hide_index=True, 
                 use_container_width=True, 
                 num_rows="dynamic",
-                key="editor_candidatures_v2" # Nouvelle clé pour forcer le reset
+                key="editor_cand_fix"
             )
             
-            # Bouton de sauvegarde
             if st.button("💾 Mettre à jour le tableau"):
                 if sh:
                     try:
                         ws = sh.worksheet("Candidatures")
                         ws.clear()
-                        # On réécrit tout (En-têtes + Données)
-                        ws.update([edited_df.columns.values.tolist()] + edited_df.values.tolist())
+                        # Astuce : on repasse tout en texte (.astype(str)) avant d'envoyer à Google pour éviter les bugs
+                        ws.update([edited_df.columns.values.tolist()] + edited_df.astype(str).values.tolist())
                         st.success("Tableau mis à jour !")
                         time.sleep(1); st.rerun()
                     except Exception as e: st.error(f"Erreur : {e}")
         except Exception as e:
-            st.error(f"Erreur d'affichage du tableau : {e}. Essaie de rafraîchir la page.")
-            # Fallback simple si l'éditeur plante
-            st.dataframe(df)
+            st.error(f"Erreur d'affichage : {e}")
+            st.dataframe(df) # Affichage de secours simple
     else:
         st.info("Aucune candidature. Commence par en ajouter une !")
 # --- NAVIGATION ---
