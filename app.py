@@ -334,7 +334,14 @@ def sidebar_menu():
 # --- REMPLACE TOUTE LA FONCTION dashboard_page PAR CELLE-CI ---
 # --- REMPLACE TOUTE LA FONCTION dashboard_page PAR CELLE-CI ---
 def dashboard_page(sh):
-    st.markdown(f"### 👋 Dashboard • {date.today().strftime('%d %B')}")
+    mois_fr = {
+        1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril", 5: "Mai", 6: "Juin", 
+        7: "Juillet", 8: "Août", 9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre"
+    }
+    auj = date.today()
+    date_str = f"{auj.day} {mois_fr[auj.month]} {auj.year}"
+    
+    st.markdown(f"### 👋 Dashboard • {date_str}")
 
     # --- 1. CALCULS DES MOYENNES (S1 & S2 PROGRESSIF) ---
     s1_display = "0.00/20"
