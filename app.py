@@ -16,6 +16,25 @@ from streamlit_calendar import calendar
 import io
 import streamlit.components.v1 as components
 
+# --- FONCTIONS CACHÉES (POUR ÉVITER L'ERREUR QUOTA) ---
+
+@st.cache_data(ttl=60) # Garde en mémoire 60 secondes
+def get_history_cached(_sh):
+    try:
+        return pd.DataFrame(_sh.worksheet("History").get_all_records())
+    except: return pd.DataFrame()
+
+@st.cache_data(ttl=300) # Garde en mémoire 5 minutes
+def get_simulator_cached(_sh):
+    try:
+        return pd.DataFrame(_sh.worksheet("Simulateur").get_all_records())
+    except: return pd.DataFrame()
+
+# Fonction pour VIDER le cache quand on fait une modification (Sauvegarde)
+def clear_cache():
+    get_history_cached.clear()
+    get_simulator_cached.clear()
+
 # --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="L3 CCA Dashboard", page_icon="🎓", layout="wide")
 
@@ -839,44 +858,52 @@ def financial_analysis_page(sh):
                 # On transforme ce dictionnaire en texte (JSON) pour le stocker
                 json_data = json.dumps(data_to_save)
                 save_to_history(sh, "AnalyseFi_Data", nom, json_data)
+                clear_cache()
                 st.success("Sauvegardé !"); time.sleep(1); st.rerun()
 
     # --- 6. HISTORIQUE INTERACTIF (LOADER) ---
-    # --- 6. HISTORIQUE INTERACTIF (CORRIGÉ & ROBUSTE) ---
+    # --- 6. HISTORIQUE INTERACTIF (OPTIMISÉ QUOTA) ---
     if sh:
         st.markdown("### 📜 Historique & Chargement")
         try:
-            raw = sh.worksheet("History").get_all_values()
-            if len(raw) > 1:
-                # On parcourt à l'envers
-                for row in reversed(raw[1:]):
-                    # Vérifions qu'on a bien une analyse
-                    if len(row) > 3 and (row[1] == "Analyse Fi" or row[1] == "AnalyseFi_Data"):
+            # ON UTILISE LE CACHE ICI 👇
+            df_history = get_history_cached(sh)
+            
+            if not df_history.empty:
+                # On inverse l'ordre pour avoir le plus récent en haut
+                for index, row in df_history.iloc[::-1].iterrows():
+                    # Vérifions qu'on a bien une analyse (Colonne 'Action')
+                    if row.get('Action') in ["Analyse Fi", "AnalyseFi_Data"]:
                         
-                        with st.expander(f"📅 {row[0]} - {row[2]}"):
-                            # TENTATIVE DE LECTURE JSON (Nouveau format)
+                        label = f"📅 {row.get('Date')} - {row.get('Subject')}"
+                        with st.expander(label):
+                            # TENTATIVE DE LECTURE JSON
                             try:
-                                saved_data = json.loads(row[3])
+                                saved_data = json.loads(row.get('Value'))
                                 
-                                # Si ça marche, on affiche le bouton magique
+                                # Résumé rapide
                                 r_frng = (saved_data['cp'] + saved_data['dettes']) - saved_data['immo']
                                 r_tn = r_frng - (saved_data['ac'] - saved_data['pc'])
                                 st.caption(f"Aperçu : FRNG {r_frng:,.0f} | TN {r_tn:,.0f}")
                                 
-                                if st.button("🔄 Charger ces données", key=f"load_{row[0]}_{uuid.uuid4()}"):
+                                if st.button("🔄 Charger ces données", key=f"load_{index}"):
                                     for k, v in saved_data.items():
                                         st.session_state[f"load_{k}"] = float(v)
                                     st.rerun()
                                     
-                            # SI CE N'EST PAS DU JSON (Ancien format texte)
-                            except json.JSONDecodeError:
+                            except (json.JSONDecodeError, TypeError):
                                 st.info("ℹ️ Ancienne sauvegarde (Texte seul)")
-                                st.text(row[3]) # On affiche juste le texte
+                                st.text(row.get('Value'))
                             except Exception as e:
-                                st.error(f"Erreur de lecture : {e}")
+                                st.error(f"Erreur lecture : {e}")
 
             else: st.info("Historique vide.")
-        except Exception as e: st.warning(f"Erreur historique : {e}")
+        except Exception as e: 
+            # Si erreur quota, on affiche un message gentil au lieu de planter
+            if "Quota exceeded" in str(e):
+                st.warning("⚠️ Trop de requêtes. Attends quelques secondes...")
+            else:
+                st.warning(f"Erreur historique : {e}")
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
