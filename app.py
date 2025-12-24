@@ -514,7 +514,7 @@ def sidebar_menu():
         st.write("")
         
         # 1. On détermine l'index par défaut basé sur l'état actuel pour synchroniser
-        options = ["Dashboard", "Mes Cours", "Candidatures", "Analyse Fi", "Focus Room"]
+        options = ["Dashboard", "Mes Cours", "Candidatures", "Analyse Fi", "Bibliothèque", "Focus Room"]
         try:
             default_ix = options.index(st.session_state.current_view)
         except:
@@ -524,7 +524,7 @@ def sidebar_menu():
         selected = option_menu(
             menu_title=None,
             options=options,
-            icons=["speedometer2", "book", "briefcase", "calculator", "hourglass"],
+           icons=["speedometer2", "book", "briefcase", "calculator", "archive", "hourglass"],
             menu_icon="cast",
             default_index=default_ix, 
             styles={
@@ -1071,6 +1071,134 @@ def financial_analysis_page(sh):
         except Exception as e:
             if "Quota exceeded" in str(e): st.warning("⚠️ Trop de requêtes. Attends un peu...")
             else: st.warning(f"Erreur historique : {e}")
+
+# --- PAGE BIBLIOTHÈQUE COMPTABLE (VERSION GOOGLE SHEETS) ---
+def accounting_library_page(sh):
+    st.markdown("### 📖 Bibliothèque d'Écritures Comptables")
+    st.markdown("Base de données collaborative des schémas d'écritures.")
+
+    # 1. CHARGEMENT / INITIALISATION AUTOMATIQUE
+    df = pd.DataFrame()
+    if sh:
+        try:
+            ws = sh.worksheet("Bibliotheque")
+            data = ws.get_all_records()
+            df = pd.DataFrame(data)
+        except:
+            # SI L'ONGLET N'EXISTE PAS, ON LE CRÉE AVEC UN PACK DE DÉMARRAGE L3 CCA
+            try:
+                ws = sh.add_worksheet(title="Bibliotheque", rows="1000", cols="4")
+                ws.append_row(["Schema", "Compte", "Libelle", "Sens"]) # En-têtes
+                
+                # --- PACK DE DÉMARRAGE L3 CCA ---
+                initial_data = [
+                    # Achat / Vente
+                    ["Achat Marchandises (Standard)", "607", "Achats de marchandises", "Debit"],
+                    ["Achat Marchandises (Standard)", "44566", "TVA déductible sur ABS", "Debit"],
+                    ["Achat Marchandises (Standard)", "401", "Fournisseurs", "Credit"],
+                    ["Vente Produits Finis", "411", "Clients", "Debit"],
+                    ["Vente Produits Finis", "701", "Ventes de produits finis", "Credit"],
+                    ["Vente Produits Finis", "44571", "TVA collectée", "Credit"],
+                    # Immos
+                    ["Acquisition Immo Corporelle", "21x", "Immobilisation Corporelle", "Debit"],
+                    ["Acquisition Immo Corporelle", "44562", "TVA déductible sur Immo", "Debit"],
+                    ["Acquisition Immo Corporelle", "404", "Fournisseurs d'immobilisations", "Credit"],
+                    ["Amortissement Annuel", "6811", "Dot. aux amortissements", "Debit"],
+                    ["Amortissement Annuel", "28x", "Amortissement des immo.", "Credit"],
+                    ["Cession Immo (Sortie)", "462", "Créances sur cessions d'immo", "Debit"],
+                    ["Cession Immo (Sortie)", "775", "PCEAC (Prix de cession)", "Credit"],
+                    ["Cession Immo (Sortie)", "44571", "TVA Collectée", "Credit"],
+                    ["Cession Immo (VNC)", "675", "VNC", "Debit"],
+                    ["Cession Immo (VNC)", "28x", "Amortissements cumulés", "Debit"],
+                    ["Cession Immo (VNC)", "21x", "Valeur Brute", "Credit"],
+                    # Stocks (Inventaire intermittent)
+                    ["Stock (Annulation Initial)", "603", "Variation de stocks", "Debit"],
+                    ["Stock (Annulation Initial)", "3xx", "Stock Initial", "Credit"],
+                    ["Stock (Constatation Final)", "3xx", "Stock Final", "Debit"],
+                    ["Stock (Constatation Final)", "603", "Variation de stocks", "Credit"],
+                    ["Depreciation Stock (Dotation)", "6817", "Dot. prov. dépréc. actifs circ.", "Debit"],
+                    ["Depreciation Stock (Dotation)", "39x", "Provisions dépréc. stocks", "Credit"],
+                    # Paie
+                    ["Paie (Salaire Brut)", "641", "Rémunération du personnel", "Debit"],
+                    ["Paie (Salaire Brut)", "421", "Personnel - Rémunérations dues", "Credit"],
+                    ["Paie (Salaire Brut)", "431", "Sécurité Sociale", "Credit"],
+                    ["Paie (Charges Patronales)", "645", "Charges sécu. et prévoyance", "Debit"],
+                    ["Paie (Charges Patronales)", "431", "Sécurité Sociale", "Credit"],
+                    # Emprunt
+                    ["Emprunt (Remboursement)", "164", "Emprunt", "Debit"],
+                    ["Emprunt (Remboursement)", "661", "Intérêts des emprunts", "Debit"],
+                    ["Emprunt (Remboursement)", "512", "Banque", "Credit"],
+                    # Titres
+                    ["VMP (Acquisition)", "503", "VMP (Actions)", "Debit"],
+                    ["VMP (Acquisition)", "512", "Banque", "Credit"],
+                    ["VMP (Cession avec Gain)", "512", "Banque", "Debit"],
+                    ["VMP (Cession avec Gain)", "503", "VMP (Actions)", "Credit"],
+                    ["VMP (Cession avec Gain)", "767", "Produits nets sur cessions VMP", "Credit"]
+                ]
+                
+                for row in initial_data:
+                    ws.append_row(row)
+                
+                # Rechargement des données
+                data = ws.get_all_records()
+                df = pd.DataFrame(data)
+                st.success("📚 Base de données comptable initialisée avec succès !"); time.sleep(1); st.rerun()
+            except Exception as e: st.error(f"Erreur init : {e}")
+
+    # 2. INTERFACE DE RECHERCHE
+    if not df.empty:
+        # On récupère la liste unique des schémas
+        schemas = sorted(list(set(df["Schema"].astype(str))))
+        
+        c_search, c_add = st.columns([3, 1])
+        with c_search:
+            search = st.selectbox("🔍 Rechercher une écriture", [""] + schemas)
+
+        # 3. AFFICHAGE DU SCHÉMA
+        if search:
+            st.markdown(f"#### ✍️ Schéma : {search}")
+            # On filtre les lignes correspondant au schéma choisi
+            lines = df[df["Schema"] == search]
+            
+            # Affichage style "Journal"
+            st.markdown("""
+            <div style="background-color:white; padding:15px; border-radius:10px; border:1px solid #e5e7eb;">
+            """, unsafe_allow_html=True)
+            
+            for index, row in lines.iterrows():
+                c1, c2, c3 = st.columns([1, 4, 1])
+                sens = row['Sens']
+                compte = str(row['Compte'])
+                libelle = row['Libelle']
+                
+                if sens == "Debit":
+                    c1.markdown(f"**{compte}**")
+                    c2.markdown(f"{libelle}")
+                    c3.markdown("🟢 Débit")
+                else:
+                    c1.markdown(f"<div style='text-align:right'>**{compte}**</div>", unsafe_allow_html=True)
+                    c2.markdown(f"<div style='text-align:right'>{libelle}</div>", unsafe_allow_html=True)
+                    c3.markdown("🔴 Crédit")
+                st.markdown("<hr style='margin:5px 0; border-top: 1px dashed #eee;'>", unsafe_allow_html=True)
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # 4. FORMULAIRE D'AJOUT (POUR COMPLÉTER LA BASE)
+    st.write("")
+    with st.expander("➕ Le schéma n'existe pas ? Ajoute-le !"):
+        st.info("Ajoute les lignes une par une pour un même schéma.")
+        with st.form("add_ecriture"):
+            f_nom = st.text_input("Nom du Schéma (Ex: Crédit-Bail Redevance)", value=search if search else "")
+            c_f1, c_f2, c_f3 = st.columns([1, 2, 1])
+            f_cpt = c_f1.text_input("Compte (Ex: 612)")
+            f_lib = c_f2.text_input("Libellé")
+            f_sens = c_f3.selectbox("Sens", ["Debit", "Credit"])
+            
+            if st.form_submit_button("Ajouter cette ligne"):
+                if sh and f_nom and f_cpt:
+                    sh.worksheet("Bibliotheque").append_row([f_nom, f_cpt, f_lib, f_sens])
+                    st.success("Ligne ajoutée ! Continue pour les autres lignes ou rafraîchis.")
+                    time.sleep(1); st.rerun()
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
@@ -1090,5 +1218,7 @@ if __name__ == "__main__":
     elif st.session_state.current_view == "Candidatures": candidatures_page(sh)
     # AJOUTER CETTE LIGNE 👇
     elif st.session_state.current_view == "Analyse Fi": financial_analysis_page(sh)
+
+    elif st.session_state.current_view == "Bibliothèque": accounting_library_page(sh)
     # --------------------
     elif st.session_state.current_view == "Focus Room": focus_room_page()
