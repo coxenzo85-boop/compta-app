@@ -589,7 +589,7 @@ def dashboard_page(sh):
         if st.button("🚀 Accéder à la Focus Room", key="btn_focus_main", use_container_width=True):
             st.session_state.current_view = "Focus Room"; st.rerun()
 
-    # --- 3. SIMULATEUR ---
+    # --- 3. SIMULATEUR & CALCULATEUR D'OBJECTIF ---
     if st.session_state.show_simulator and sh:
         st.write(""); st.info("ℹ️ S2 : Laisse les coefficients à 0 si tu n'as pas encore de note.")
         try:
@@ -607,11 +607,78 @@ def dashboard_page(sh):
             with tab1: e1 = show_sim(df_sim[df_sim['Semestre']=='S1'], "e1")
             with tab2: e2 = show_sim(df_sim[df_sim['Semestre']=='S2'], "e2")
             
+            # --- SAUVEGARDE ---
             if st.button("💾 Sauvegarder"):
                 full = pd.concat([e1.drop(columns=['Moyenne'], errors='ignore'), e2.drop(columns=['Moyenne'], errors='ignore')])
                 save_simulator_data(sh, full)
                 st.success("Sauvegardé !"); time.sleep(1); st.rerun()
-        except: st.error("Erreur Simulateur")
+
+            # --- NOUVEAU : CALCULATEUR D'OBJECTIF (REVERSE SIMULATOR) ---
+            st.write("")
+            with st.expander("🎯 Calculateur d'Objectif (Reverse Simulator)", expanded=True):
+                st.markdown("##### Quel est ton objectif pour le S2 ?")
+                
+                # 1. Sélection de l'objectif
+                col_obj, col_res = st.columns([1, 2])
+                target = col_obj.number_input("Moyenne visée (/20)", min_value=10.0, max_value=20.0, value=12.0, step=0.5)
+                
+                # 2. Algorithme de calcul
+                # On travaille sur les données éditées (e2) pour être à jour
+                df_calc = e2.copy()
+                
+                # Total des coeffs du semestre (Théorique)
+                # On suppose que tous les cours listés comptent
+                total_coef_semestre = (df_calc['Coef_CC'] + df_calc['Coef_Partiel']).sum()
+                
+                if total_coef_semestre > 0:
+                    # Points TOTAL à atteindre
+                    points_cible = target * total_coef_semestre
+                    
+                    # Points DÉJÀ ACQUIS (Là où la note > 0)
+                    # Note : On considère qu'une note à 0 est "pas encore passée"
+                    points_acquis = (df_calc['Note_CC'] * df_calc['Coef_CC']).sum() + (df_calc['Note_Partiel'] * df_calc['Coef_Partiel']).sum()
+                    
+                    # Coeffs "Consommés" (là où note > 0)
+                    coef_conso_cc = df_calc.loc[df_calc['Note_CC'] > 0, 'Coef_CC'].sum()
+                    coef_conso_ct = df_calc.loc[df_calc['Note_Partiel'] > 0, 'Coef_Partiel'].sum()
+                    
+                    # Coeffs Restants
+                    coef_restant = total_coef_semestre - (coef_conso_cc + coef_conso_ct)
+                    
+                    # Points Manquants
+                    points_manquants = points_cible - points_acquis
+                    
+                    # RÉSULTAT
+                    with col_res:
+                        if coef_restant <= 0:
+                            if points_acquis >= points_cible:
+                                st.success(f"🎉 BRAVO ! Tu as déjà atteint ton objectif (Moyenne actuelle : {points_acquis/total_coef_semestre:.2f})")
+                            else:
+                                st.error(f"Terminé. Moyenne finale : {points_acquis/total_coef_semestre:.2f}. Objectif raté.")
+                        else:
+                            moyenne_requise = points_manquants / coef_restant
+                            
+                            st.write(f"Points manquants : **{points_manquants:.1f}** sur les coeff. restants ({coef_restant:.1f})")
+                            
+                            if moyenne_requise > 20:
+                                st.error(f"🛑 Mission Impossible... Il te faudrait **{moyenne_requise:.2f}/20** de moyenne sur le reste.")
+                            elif moyenne_requise < 0:
+                                st.success(f"🎉 C'est gagné ! Même avec 0/20 tu as ton objectif.")
+                            else:
+                                color = "green" if moyenne_requise < 12 else "orange" if moyenne_requise < 16 else "red"
+                                st.markdown(f"""
+                                <div style="background-color:white; padding:15px; border-radius:10px; border-left: 5px solid {color}; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                                    <h3 style="margin:0; color:{NAVY}">🎯 Objectif : {target}/20</h3>
+                                    <p style="margin:5px 0 0 0; font-size:16px;">
+                                        Tu dois avoir une moyenne de <strong style="color:{color}; font-size:20px">{moyenne_requise:.2f}/20</strong>
+                                        sur toutes les épreuves restantes.
+                                    </p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                else:
+                    st.warning("Remplis les coefficients dans le simulateur pour activer le calcul.")
+
+        except Exception as e: st.error(f"Erreur Simulateur : {e}")
         st.markdown("---")
 
     # --- 4. CONTENU PRINCIPAL ---
@@ -677,7 +744,7 @@ def dashboard_page(sh):
             except: pass
 
     with cr:
-        # C. TO-DO LIST (REMPLACE LES EXAMENS)
+        # C. TO-DO LIST
         st.markdown(f"#### <span style='color:{NAVY}'>📌 To-Do Urgent</span>", unsafe_allow_html=True)
         if sh:
             try:
