@@ -22,69 +22,79 @@ import pandas as pd
 import json
 from fpdf import FPDF  # <--- AJOUTE ÇA
 
-# --- FONCTION GÉNÉRATEUR PDF ---
+# --- FONCTION GÉNÉRATEUR PDF (CORRIGÉE) ---
 def create_financial_pdf(data):
     class PDF(FPDF):
         def header(self):
             # Titre / En-tête
             self.set_font('Arial', 'B', 15)
-            self.cell(0, 10, 'Rapport d\'Analyse Financière', 0, 1, 'C')
+            # On encode en latin-1 pour éviter les bugs d'accents dans le header
+            self.cell(0, 10, 'Rapport d\'Analyse Financiere'.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
             self.set_font('Arial', 'I', 10)
-            self.cell(0, 10, f"Généré par L3 CCA Dashboard - {date.today().strftime('%d/%m/%Y')}", 0, 1, 'C')
+            date_str = date.today().strftime('%d/%m/%Y')
+            txt = f"Genere par L3 CCA Dashboard - {date_str}"
+            self.cell(0, 10, txt.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
             self.ln(5)
 
         def chapter_title(self, title):
             self.set_font('Arial', 'B', 12)
             self.set_fill_color(200, 220, 255) # Bleu clair
-            self.cell(0, 10, title, 0, 1, 'L', 1)
+            # Nettoyage préventif du titre
+            clean_title = title.encode('latin-1', 'replace').decode('latin-1')
+            self.cell(0, 10, clean_title, 0, 1, 'L', 1)
             self.ln(4)
 
         def chapter_body(self, body):
             self.set_font('Arial', '', 11)
-            self.multi_cell(0, 8, body)
+            # Nettoyage préventif du corps de texte
+            clean_body = body.encode('latin-1', 'replace').decode('latin-1')
+            self.multi_cell(0, 8, clean_body)
             self.ln()
 
     # Initialisation
     pdf = PDF()
     pdf.add_page()
     
-    # Titre du Cas
+    # Titre du Cas (Nettoyage du nom de l'entreprise)
     pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, f"Dossier : {data['nom']}", 0, 1, 'L')
+    nom_dossier = data['nom'].replace("€", "EUR") # Sécurité
+    clean_nom = nom_dossier.encode('latin-1', 'replace').decode('latin-1')
+    pdf.cell(0, 10, f"Dossier : {clean_nom}", 0, 1, 'L')
     pdf.ln(5)
 
     # 1. Équilibre Financier
-    pdf.chapter_title('1. Équilibre Financier (Bilan Fonctionnel)')
+    # NOTE : J'ai remplacé le signe € par EUR pour éviter le crash
+    pdf.chapter_title('1. Equilibre Financier (Bilan Fonctionnel)')
     text_equilibre = (
-        f"FRNG (Fonds de Roulement) : {data['frng']:,.0f} €\n"
-        f"BFR (Besoin en Fonds de Roulement) : {data['bfr']:,.0f} €\n"
-        f"Trésorerie Nette (TN) : {data['tn']:,.0f} €\n\n"
-        f"INTERPRÉTATION : {'Situation Saine. Le FRNG couvre le BFR.' if data['tn'] > 0 else 'ATTENTION : Trésorerie Négative. Le FRNG est insuffisant.'}"
+        f"FRNG (Fonds de Roulement) : {data['frng']:,.0f} EUR\n"
+        f"BFR (Besoin en Fonds de Roulement) : {data['bfr']:,.0f} EUR\n"
+        f"Tresorerie Nette (TN) : {data['tn']:,.0f} EUR\n\n"
+        f"INTERPRETATION : {'Situation Saine. Le FRNG couvre le BFR.' if data['tn'] > 0 else 'ATTENTION : Tresorerie Negative. Le FRNG est insuffisant.'}"
     )
     pdf.chapter_body(text_equilibre)
 
     # 2. Rentabilité
-    pdf.chapter_title('2. Performance & Rentabilité')
+    pdf.chapter_title('2. Performance & Rentabilite')
     text_renta = (
-        f"Chiffre d'Affaires : {data['ca']:,.0f} €\n"
+        f"Chiffre d'Affaires : {data['ca']:,.0f} EUR\n"
         f"Marge Nette : {data['marge']:.2f} %\n"
-        f"ROE (Rentabilité Financière) : {data['roe']:.2f} %\n"
-        f"ROCE (Rentabilité Économique) : {data['roce']:.2f} %"
+        f"ROE (Rentabilite Financiere) : {data['roe']:.2f} %\n"
+        f"ROCE (Rentabilite Economique) : {data['roce']:.2f} %"
     )
     pdf.chapter_body(text_renta)
 
     # 3. Risque
-    pdf.chapter_title('3. Structure & Solvabilité')
+    pdf.chapter_title('3. Structure & Solvabilite')
     text_risk = (
         f"Levier Financier (Dettes/CP) : {data['levier']:.2f}\n"
-        f"Autonomie Financière : {data['autonomie']:.2f} %\n\n"
-        f"DIAGNOSTIC : {'Structure endettée (Levier > 1).' if data['levier'] > 1 else 'Structure financière solide (Levier < 1).'}"
+        f"Autonomie Financiere : {data['autonomie']:.2f} %\n\n"
+        f"DIAGNOSTIC : {'Structure endettee (Levier > 1).' if data['levier'] > 1 else 'Structure financiere solide (Levier < 1).'}"
     )
     pdf.chapter_body(text_risk)
 
     # Output
-    # Astuce pour les accents : encode en latin-1 pour FPDF standard
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    # On renvoie les bytes directement
+    return pdf.output(dest='S').encode('latin-1')
 
 # --- FONCTIONS CACHÉES (POUR ÉVITER L'ERREUR QUOTA) ---
 
