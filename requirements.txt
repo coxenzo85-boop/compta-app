@@ -9,3 +9,4 @@ icalendar
 requests
 streamlit-calendar
 matplotlib
+fpdf
