@@ -291,7 +291,22 @@ def load_simulator_data(sh):
             
         return df
     except: return pd.DataFrame()
--------
+# --- FONCTION UTILITAIRE : SAUVEGARDE HISTORIQUE ---
+def save_to_history(sh, action, subject, value):
+    try:
+        # Tente d'ajouter une ligne à la feuille "History"
+        sh.worksheet("History").append_row([str(date.today()), action, subject, value])
+    except gspread.exceptions.WorksheetNotFound:
+        # Si la feuille "History" n'existe pas, on la crée
+        try:
+            ws = sh.add_worksheet(title="History", rows="1000", cols="4")
+            ws.append_row(["Date", "Action", "Subject", "Value"]) # En-têtes
+            ws.append_row([str(date.today()), action, subject, value])
+        except Exception as e:
+            st.error(f"Erreur lors de la création de l'historique : {e}")
+    except Exception as e:
+        st.error(f"Erreur lors de la sauvegarde : {e}")
+    
 def save_simulator_data(sh, df):
     try:
         ws = sh.worksheet("Simulateur")
