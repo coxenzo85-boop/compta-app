@@ -16,6 +16,76 @@ from streamlit_calendar import calendar
 import io
 import streamlit.components.v1 as components
 
+import streamlit as st
+import pandas as pd
+# ... tes autres imports ...
+import json
+from fpdf import FPDF  # <--- AJOUTE ÇA
+
+# --- FONCTION GÉNÉRATEUR PDF ---
+def create_financial_pdf(data):
+    class PDF(FPDF):
+        def header(self):
+            # Titre / En-tête
+            self.set_font('Arial', 'B', 15)
+            self.cell(0, 10, 'Rapport d\'Analyse Financière', 0, 1, 'C')
+            self.set_font('Arial', 'I', 10)
+            self.cell(0, 10, f"Généré par L3 CCA Dashboard - {date.today().strftime('%d/%m/%Y')}", 0, 1, 'C')
+            self.ln(5)
+
+        def chapter_title(self, title):
+            self.set_font('Arial', 'B', 12)
+            self.set_fill_color(200, 220, 255) # Bleu clair
+            self.cell(0, 10, title, 0, 1, 'L', 1)
+            self.ln(4)
+
+        def chapter_body(self, body):
+            self.set_font('Arial', '', 11)
+            self.multi_cell(0, 8, body)
+            self.ln()
+
+    # Initialisation
+    pdf = PDF()
+    pdf.add_page()
+    
+    # Titre du Cas
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 10, f"Dossier : {data['nom']}", 0, 1, 'L')
+    pdf.ln(5)
+
+    # 1. Équilibre Financier
+    pdf.chapter_title('1. Équilibre Financier (Bilan Fonctionnel)')
+    text_equilibre = (
+        f"FRNG (Fonds de Roulement) : {data['frng']:,.0f} €\n"
+        f"BFR (Besoin en Fonds de Roulement) : {data['bfr']:,.0f} €\n"
+        f"Trésorerie Nette (TN) : {data['tn']:,.0f} €\n\n"
+        f"INTERPRÉTATION : {'Situation Saine. Le FRNG couvre le BFR.' if data['tn'] > 0 else 'ATTENTION : Trésorerie Négative. Le FRNG est insuffisant.'}"
+    )
+    pdf.chapter_body(text_equilibre)
+
+    # 2. Rentabilité
+    pdf.chapter_title('2. Performance & Rentabilité')
+    text_renta = (
+        f"Chiffre d'Affaires : {data['ca']:,.0f} €\n"
+        f"Marge Nette : {data['marge']:.2f} %\n"
+        f"ROE (Rentabilité Financière) : {data['roe']:.2f} %\n"
+        f"ROCE (Rentabilité Économique) : {data['roce']:.2f} %"
+    )
+    pdf.chapter_body(text_renta)
+
+    # 3. Risque
+    pdf.chapter_title('3. Structure & Solvabilité')
+    text_risk = (
+        f"Levier Financier (Dettes/CP) : {data['levier']:.2f}\n"
+        f"Autonomie Financière : {data['autonomie']:.2f} %\n\n"
+        f"DIAGNOSTIC : {'Structure endettée (Levier > 1).' if data['levier'] > 1 else 'Structure financière solide (Levier < 1).'}"
+    )
+    pdf.chapter_body(text_risk)
+
+    # Output
+    # Astuce pour les accents : encode en latin-1 pour FPDF standard
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
 # --- FONCTIONS CACHÉES (POUR ÉVITER L'ERREUR QUOTA) ---
 
 @st.cache_data(ttl=60) # Garde en mémoire 60 secondes
@@ -841,26 +911,50 @@ def financial_analysis_page(sh):
     k3.metric("Levier", f"{levier:.2f}", delta_color="inverse", delta="⚠️" if levier > 1 else "Ok")
     k4.metric("Autonomie", f"{autonomie:.0f} %")
 
-    # --- 4. SAUVEGARDE (JSON) ---
+    # --- 4. SAUVEGARDE & EXPORT ---
     st.markdown("---")
     with st.container(border=True):
-        c_in, c_bt = st.columns([3, 1])
+        st.markdown("##### 💾 Sauvegarder & Exporter")
+        c_in, c_save, c_export = st.columns([3, 1, 1]) # On fait 3 colonnes
+        
         nom = c_in.text_input("Nom de l'analyse", placeholder="Ex: Cas Danone 2024")
         
-        if c_bt.button("💾 Sauvegarder", use_container_width=True):
+        # Données complètes pour sauvegarde et PDF
+        data_full = {
+            "nom": nom if nom else "Analyse Sans Nom",
+            "ca": ca, "rex": rex, "rn": rn,
+            "cp": cap_propres, "dettes": dettes_fi, "immo": actif_immo,
+            "ac": actif_circ, "pc": passif_circ,
+            "ta": treso_actif, "tp": treso_passif,
+            # On ajoute les résultats calculés pour le PDF
+            "frng": frng, "bfr": bfr, "tn": tn,
+            "marge": marge, "roe": roe, "roce": roce,
+            "levier": levier, "autonomie": autonomie
+        }
+
+        # BOUTON 1 : SAUVEGARDER (JSON)
+        if c_save.button("💾 Sauver", use_container_width=True):
             if sh and nom:
-                data_to_save = {
-                    "ca": ca, "rex": rex, "rn": rn,
-                    "cp": cap_propres, "dettes": dettes_fi, "immo": actif_immo,
-                    "ac": actif_circ, "pc": passif_circ,
-                    "ta": treso_actif, "tp": treso_passif
-                }
-                json_data = json.dumps(data_to_save)
+                # Pour l'historique, on garde le format technique pour rechargement
+                json_data = json.dumps({k: v for k,v in data_full.items() if k in ["ca","rex","rn","cp","dettes","immo","ac","pc","ta","tp"]})
                 save_to_history(sh, "AnalyseFi_Data", nom, json_data)
-                clear_cache() # Vide le cache pour voir la nouvelle sauvegarde
+                clear_cache()
                 st.success("Sauvegardé !")
-                time.sleep(1)
-                st.rerun()
+                time.sleep(1); st.rerun()
+            elif not nom:
+                st.warning("Nom manquant !")
+
+        # BOUTON 2 : TÉLÉCHARGER PDF (NOUVEAU !)
+        # On génère le PDF en mémoire
+        pdf_bytes = create_financial_pdf(data_full)
+        
+        c_export.download_button(
+            label="📄 PDF",
+            data=pdf_bytes,
+            file_name=f"Analyse_{nom.replace(' ', '_') if nom else 'Financiere'}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
     # --- 5. HISTORIQUE & CHARGEMENT (CORRIGÉ AVEC CALLBACK) ---
     if sh:
