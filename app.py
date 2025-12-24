@@ -757,154 +757,119 @@ def focus_room_page():
                 st.session_state.timer_active = False
                 st.session_state.timer_end_time = None
                 st.rerun()
+import json # Assure-toi que cet import est présent au tout début du fichier app.py, sinon ajoute-le.
+
 # --- REMPLACE TOUTE LA FONCTION financial_analysis_page PAR CELLE-CI ---
 def financial_analysis_page(sh):
     st.markdown("### 📊 Diagnostic & Ratios Financiers")
     st.markdown("Rentre les masses de ton bilan, l'outil calcule le reste.")
 
-    # --- ZONE DE SAISIE (GAUCHE) ---
+    # --- 1. GESTION DU CHARGEMENT DES DONNÉES ---
+    # Si on vient de cliquer sur "Charger", on récupère les valeurs, sinon on met 0
+    def get_val(key):
+        return st.session_state.get(f"load_{key}", 0.0)
+
+    # --- 2. ZONE DE SAISIE (GAUCHE) ---
+    # On utilise des 'key' spécifiques pour pouvoir les remplir automatiquement
     with st.sidebar:
         st.header("1. Compte de Résultat")
-        ca = st.number_input("Chiffre d'Affaires (CA)", value=0.0, step=1000.0)
-        rex = st.number_input("Résultat d'Exploitation (REX)", value=0.0, step=1000.0)
-        rn = st.number_input("Résultat Net (RN)", value=0.0, step=1000.0)
+        # On vérifie si une valeur chargée existe, sinon 0.0
+        ca = st.number_input("Chiffre d'Affaires (CA)", value=get_val('ca'), step=1000.0, key="af_ca")
+        rex = st.number_input("Résultat d'Exploitation (REX)", value=get_val('rex'), step=1000.0, key="af_rex")
+        rn = st.number_input("Résultat Net (RN)", value=get_val('rn'), step=1000.0, key="af_rn")
         
         st.header("2. Bilan (Haut)")
-        cap_propres = st.number_input("Capitaux Propres (CP)", value=0.0, step=1000.0)
-        dettes_fi = st.number_input("Dettes Financières (LMT)", value=0.0, step=1000.0)
-        actif_immo = st.number_input("Actif Immobilisé Brut", value=0.0, step=1000.0)
+        cap_propres = st.number_input("Capitaux Propres (CP)", value=get_val('cp'), step=1000.0, key="af_cp")
+        dettes_fi = st.number_input("Dettes Financières (LMT)", value=get_val('dettes'), step=1000.0, key="af_dettes")
+        actif_immo = st.number_input("Actif Immobilisé Brut", value=get_val('immo'), step=1000.0, key="af_immo")
         
         st.header("3. Bilan (Bas - BFR)")
-        actif_circ = st.number_input("Actif Circulant (Exploit. + Hors Exploit.)", value=0.0, step=1000.0)
-        passif_circ = st.number_input("Passif Circulant (Dettes Fourn. + Fiscales)", value=0.0, step=1000.0)
+        actif_circ = st.number_input("Actif Circulant", value=get_val('ac'), step=1000.0, key="af_ac")
+        passif_circ = st.number_input("Passif Circulant", value=get_val('pc'), step=1000.0, key="af_pc")
         
         st.header("4. Trésorerie")
-        treso_actif = st.number_input("Trésorerie Actif", value=0.0, step=1000.0)
-        treso_passif = st.number_input("Trésorerie Passif (Concours Bancaires)", value=0.0, step=1000.0)
+        treso_actif = st.number_input("Trésorerie Actif", value=get_val('ta'), step=1000.0, key="af_ta")
+        treso_passif = st.number_input("Trésorerie Passif", value=get_val('tp'), step=1000.0, key="af_tp")
 
-    # --- CALCULS ---
-    # 1. Équilibre Fonctionnel
-    ressources_stables = cap_propres + dettes_fi
-    emplois_stables = actif_immo
-    frng = ressources_stables - emplois_stables
-    
+    # --- 3. CALCULS EN TEMPS RÉEL ---
+    frng = (cap_propres + dettes_fi) - actif_immo
     bfr = actif_circ - passif_circ
     tn = frng - bfr
-    tn_verif = treso_actif - treso_passif
-
-    # 2. Ratios
-    # Rentabilité
-    roe = (rn / cap_propres * 100) if cap_propres > 0 else 0
-    capitaux_engages = cap_propres + dettes_fi
-    roce = (rex / capitaux_engages * 100) if capitaux_engages > 0 else 0
-    marge_nette = (rn / ca * 100) if ca > 0 else 0
     
-    # Structure
+    # Ratios
+    roe = (rn / cap_propres * 100) if cap_propres > 0 else 0
+    cap_engages = cap_propres + dettes_fi
+    roce = (rex / cap_engages * 100) if cap_engages > 0 else 0
+    marge = (rn / ca * 100) if ca > 0 else 0
     levier = dettes_fi / cap_propres if cap_propres > 0 else 0
     autonomie = cap_propres / (cap_propres + dettes_fi + passif_circ + treso_passif) * 100 if (cap_propres + dettes_fi + passif_circ) > 0 else 0
 
-    # --- AFFICHAGE DASHBOARD ---
-    
-    # BLOC 1 : L'ÉQUILIBRE FINANCIER (FRNG / BFR / TN)
+    # --- 4. AFFICHAGE DASHBOARD ---
     st.markdown("#### 🏗️ Équilibre Financier")
     c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.metric("FRNG (Fonds de Roulement)", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
-        st.caption("Ressources Stables - Emplois Stables")
-        
-    with c2:
-        st.metric("BFR (Besoin en Fonds de Roulement)", f"{bfr:,.0f} €", delta_color="inverse", delta="Besoin élevé" if bfr > 0 else "Ressource")
-        st.caption("Actif Circulant - Passif Circulant")
-        
-    with c3:
-        st.metric("TN (Trésorerie Nette)", f"{tn:,.0f} €", delta="Excédent" if tn > 0 else "Déficit")
-        st.caption(f"FRNG - BFR (Vérif: {tn_verif:,.0f} €)")
+    c1.metric("FRNG", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
+    c2.metric("BFR", f"{bfr:,.0f} €", delta_color="inverse", delta="Besoin" if bfr > 0 else "Ressource")
+    c3.metric("Trésorerie Nette", f"{tn:,.0f} €", delta="Excédent" if tn > 0 else "Déficit")
 
-    if tn < 0:
-        st.error("⚠️ **Alerte :** La Trésorerie est négative. Le FRNG ne suffit pas à financer le BFR.")
-    else:
-        st.success("✅ **Situation saine :** L'équilibre financier est respecté.")
+    if tn < 0: st.error("⚠️ Trésorerie négative.")
+    else: st.success("✅ Situation saine.")
 
     st.markdown("---")
+    st.markdown("#### 🚀 Performance & Risque")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Marge Nette", f"{marge:.1f} %")
+    k2.metric("ROE", f"{roe:.1f} %")
+    k3.metric("Levier", f"{levier:.2f}", delta_color="inverse", delta="⚠️" if levier > 1 else "Ok")
+    k4.metric("Autonomie", f"{autonomie:.0f} %")
 
-    # BLOC 2 : RENTABILITÉ (ROE / ROCE)
-    st.markdown("#### 🚀 Performance & Rentabilité")
-    k1, k2, k3 = st.columns(3)
-    
-    with k1:
-        st.metric("Marge Nette", f"{marge_nette:.1f} %")
-        st.progress(min(marge_nette/100, 1.0))
-        
-    with k2:
-        st.metric("ROE (Rentabilité Financière)", f"{roe:.1f} %")
-        st.caption("Rentabilité pour l'actionnaire")
-        
-    with k3:
-        st.metric("ROCE (Rentabilité Économique)", f"{roce:.1f} %")
-        st.caption("Rentabilité des capitaux investis")
-
-    # BLOC 3 : RISQUE & STRUCTURE
-    st.markdown("---")
-    st.markdown("#### ⚖️ Risque & Solvabilité")
-    
-    r1, r2 = st.columns(2)
-    with r1:
-        color_lev = "normal" if levier < 1 else "off" # Rouge si > 1
-        st.metric("Levier Financier (Gearing)", f"{levier:.2f}", delta="Trop endetté" if levier > 1 else "Bon", delta_color="inverse")
-        st.caption("Dettes Fi. / Capitaux Propres (Doit être < 1)")
-        
-    with r2:
-        st.metric("Autonomie Financière", f"{autonomie:.1f} %")
-        st.caption("Part des CP dans le total Bilan")
-
-    # SECTION SAUVEGARDE
+    # --- 5. SAUVEGARDE INTELLIGENTE (JSON) ---
     st.markdown("---")
     with st.container(border=True):
-        st.markdown("##### 💾 Sauvegarder cette analyse")
-        c_input, c_btn = st.columns([3, 1])
-        nom_analyse = c_input.text_input("Nom de l'entreprise / Cas", placeholder="Ex: Cas Danone 2024")
-        
-        if c_btn.button("Archiver", use_container_width=True):
-            if sh and nom_analyse:
-                # --- MODIFICATION ICI : ON SAUVEGARDE TOUT ---
-                resume = (
-                    f"FRNG: {frng:,.0f} | BFR: {bfr:,.0f} | TN: {tn:,.0f} || "
-                    f"Marge: {marge_nette:.1f}% | ROE: {roe:.1f}% | ROCE: {roce:.1f}% || "
-                    f"Levier: {levier:.2f} | Auto: {autonomie:.1f}%"
-                )
-                # ---------------------------------------------
-                save_to_history(sh, "Analyse Fi", nom_analyse, resume)
-                st.success("Sauvegardé avec tous les détails !")
-                time.sleep(1); st.rerun()
-            elif not nom_analyse:
-                st.warning("Donne un nom à ton analyse !")
+        c_in, c_bt = st.columns([3, 1])
+        nom = c_in.text_input("Nom de l'analyse", placeholder="Ex: Cas Danone 2024")
+        if c_bt.button("💾 Sauvegarder", use_container_width=True):
+            if sh and nom:
+                # On crée un dictionnaire avec TOUTES les entrées
+                data_to_save = {
+                    "ca": ca, "rex": rex, "rn": rn,
+                    "cp": cap_propres, "dettes": dettes_fi, "immo": actif_immo,
+                    "ac": actif_circ, "pc": passif_circ,
+                    "ta": treso_actif, "tp": treso_passif
+                }
+                # On transforme ce dictionnaire en texte (JSON) pour le stocker
+                json_data = json.dumps(data_to_save)
+                save_to_history(sh, "AnalyseFi_Data", nom, json_data)
+                st.success("Sauvegardé !"); time.sleep(1); st.rerun()
 
-    # SECTION HISTORIQUE
+    # --- 6. HISTORIQUE INTERACTIF (LOADER) ---
     if sh:
-        st.markdown("### 📜 Historique de mes analyses")
+        st.markdown("### 📜 Historique & Chargement")
         try:
-            raw_data = sh.worksheet("History").get_all_values()
-            if len(raw_data) > 1:
-                df_hist = pd.DataFrame(raw_data[1:], columns=raw_data[0])
-                df_analyses = df_hist[df_hist['Action'] == 'Analyse Fi'].copy()
-                
-                if not df_analyses.empty:
-                    # On affiche les résultats complets
-                    df_show = df_analyses[['Date', 'Subject', 'Value']].rename(columns={
-                        'Date': 'Date', 
-                        'Subject': 'Entreprise/Cas', 
-                        'Value': 'Détail des Ratios'
-                    })
-                    # On met le plus récent en premier
-                    df_show = df_show.iloc[::-1]
-                    st.dataframe(df_show, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Aucune analyse archivée pour le moment.")
-            else:
-                st.info("L'historique est vide.")
-        except Exception as e:
-            st.warning(f"Impossible de charger l'historique ({e})")
+            raw = sh.worksheet("History").get_all_values()
+            if len(raw) > 1:
+                # On parcourt à l'envers pour avoir le plus récent en haut
+                for row in reversed(raw[1:]):
+                    # row = [Date, Action, Subject, Value]
+                    if row[1] == "AnalyseFi_Data": # On ne prend que les nouvelles sauvegardes compatibles
+                        with st.expander(f"📅 {row[0]} - {row[2]}"):
+                            try:
+                                # On décode les données
+                                saved_data = json.loads(row[3])
+                                
+                                # On affiche un petit résumé rapide
+                                r_frng = (saved_data['cp'] + saved_data['dettes']) - saved_data['immo']
+                                r_tn = r_frng - (saved_data['ac'] - saved_data['pc'])
+                                st.caption(f"Aperçu : FRNG {r_frng:,.0f} | TN {r_tn:,.0f}")
+                                
+                                # LE BOUTON MAGIQUE
+                                if st.button("🔄 Charger ces données", key=f"load_{row[0]}_{row[2]}"):
+                                    # On injecte les données dans le Session State avec le préfixe "load_"
+                                    for k, v in saved_data.items():
+                                        st.session_state[f"load_{k}"] = float(v)
+                                    st.rerun()
+                            except: st.error("Données corrompues")
+            else: st.info("Historique vide.")
+        except Exception as e: st.warning(f"Erreur historique : {e}")
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
