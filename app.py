@@ -886,9 +886,13 @@ def financial_analysis_page(sh):
                                 r_tn = r_frng - (saved_data['ac'] - saved_data['pc'])
                                 st.caption(f"Aperçu : FRNG {r_frng:,.0f} | TN {r_tn:,.0f}")
                                 
+                                # LE BOUTON MAGIQUE (CORRIGÉ)
                                 if st.button("🔄 Charger ces données", key=f"load_{index}"):
                                     for k, v in saved_data.items():
-                                        st.session_state[f"load_{k}"] = float(v)
+                                        # ASTUCE : On met à jour directement la clé du widget (af_ca, af_rn...)
+                                        # Cela force Streamlit à afficher la nouvelle valeur
+                                        st.session_state[f"af_{k}"] = float(v)
+                                    
                                     st.rerun()
                                     
                             except (json.JSONDecodeError, TypeError):
