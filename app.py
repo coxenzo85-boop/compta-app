@@ -783,6 +783,7 @@ def financial_analysis_page(sh):
         treso_passif = st.number_input("Trésorerie Passif (Concours Bancaires)", value=0.0, step=1000.0)
 
     # --- CALCULS ---
+    # 1. Équilibre Fonctionnel
     ressources_stables = cap_propres + dettes_fi
     emplois_stables = actif_immo
     frng = ressources_stables - emplois_stables
@@ -791,44 +792,73 @@ def financial_analysis_page(sh):
     tn = frng - bfr
     tn_verif = treso_actif - treso_passif
 
-    # Ratios
+    # 2. Ratios
+    # Rentabilité
     roe = (rn / cap_propres * 100) if cap_propres > 0 else 0
     capitaux_engages = cap_propres + dettes_fi
     roce = (rex / capitaux_engages * 100) if capitaux_engages > 0 else 0
     marge_nette = (rn / ca * 100) if ca > 0 else 0
     
+    # Structure
     levier = dettes_fi / cap_propres if cap_propres > 0 else 0
     autonomie = cap_propres / (cap_propres + dettes_fi + passif_circ + treso_passif) * 100 if (cap_propres + dettes_fi + passif_circ) > 0 else 0
 
     # --- AFFICHAGE DASHBOARD ---
     
-    # 1. ÉQUILIBRE
+    # BLOC 1 : L'ÉQUILIBRE FINANCIER (FRNG / BFR / TN)
     st.markdown("#### 🏗️ Équilibre Financier")
     c1, c2, c3 = st.columns(3)
-    c1.metric("FRNG", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
-    c2.metric("BFR", f"{bfr:,.0f} €", delta_color="inverse", delta="Besoin élevé" if bfr > 0 else "Ressource")
-    c3.metric("Trésorerie Nette", f"{tn:,.0f} €", delta="Excédent" if tn > 0 else "Déficit")
+    
+    with c1:
+        st.metric("FRNG (Fonds de Roulement)", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
+        st.caption("Ressources Stables - Emplois Stables")
+        
+    with c2:
+        st.metric("BFR (Besoin en Fonds de Roulement)", f"{bfr:,.0f} €", delta_color="inverse", delta="Besoin élevé" if bfr > 0 else "Ressource")
+        st.caption("Actif Circulant - Passif Circulant")
+        
+    with c3:
+        st.metric("TN (Trésorerie Nette)", f"{tn:,.0f} €", delta="Excédent" if tn > 0 else "Déficit")
+        st.caption(f"FRNG - BFR (Vérif: {tn_verif:,.0f} €)")
 
-    if tn < 0: st.error("⚠️ **Alerte :** Trésorerie négative.")
-    else: st.success("✅ **Situation saine.**")
+    if tn < 0:
+        st.error("⚠️ **Alerte :** La Trésorerie est négative. Le FRNG ne suffit pas à financer le BFR.")
+    else:
+        st.success("✅ **Situation saine :** L'équilibre financier est respecté.")
 
     st.markdown("---")
 
-    # 2. RENTABILITÉ
+    # BLOC 2 : RENTABILITÉ (ROE / ROCE)
     st.markdown("#### 🚀 Performance & Rentabilité")
     k1, k2, k3 = st.columns(3)
-    k1.metric("Marge Nette", f"{marge_nette:.1f} %")
-    k2.metric("ROE (Fi)", f"{roe:.1f} %")
-    k3.metric("ROCE (Eco)", f"{roce:.1f} %")
+    
+    with k1:
+        st.metric("Marge Nette", f"{marge_nette:.1f} %")
+        st.progress(min(marge_nette/100, 1.0))
+        
+    with k2:
+        st.metric("ROE (Rentabilité Financière)", f"{roe:.1f} %")
+        st.caption("Rentabilité pour l'actionnaire")
+        
+    with k3:
+        st.metric("ROCE (Rentabilité Économique)", f"{roce:.1f} %")
+        st.caption("Rentabilité des capitaux investis")
 
-    # 3. RISQUE
+    # BLOC 3 : RISQUE & STRUCTURE
     st.markdown("---")
     st.markdown("#### ⚖️ Risque & Solvabilité")
+    
     r1, r2 = st.columns(2)
-    r1.metric("Levier (Gearing)", f"{levier:.2f}", delta="Trop endetté" if levier > 1 else "Bon", delta_color="inverse")
-    r2.metric("Autonomie Fi.", f"{autonomie:.1f} %")
+    with r1:
+        color_lev = "normal" if levier < 1 else "off" # Rouge si > 1
+        st.metric("Levier Financier (Gearing)", f"{levier:.2f}", delta="Trop endetté" if levier > 1 else "Bon", delta_color="inverse")
+        st.caption("Dettes Fi. / Capitaux Propres (Doit être < 1)")
+        
+    with r2:
+        st.metric("Autonomie Financière", f"{autonomie:.1f} %")
+        st.caption("Part des CP dans le total Bilan")
 
-    # 4. SAUVEGARDE
+    # SECTION SAUVEGARDE
     st.markdown("---")
     with st.container(border=True):
         st.markdown("##### 💾 Sauvegarder cette analyse")
@@ -837,35 +867,37 @@ def financial_analysis_page(sh):
         
         if c_btn.button("Archiver", use_container_width=True):
             if sh and nom_analyse:
-                # On formate une petite chaîne de résumé pour l'historique
-                resume = f"ROE: {roe:.1f}% | Levier: {levier:.2f} | TN: {tn:,.0f}"
+                # --- MODIFICATION ICI : ON SAUVEGARDE TOUT ---
+                resume = (
+                    f"FRNG: {frng:,.0f} | BFR: {bfr:,.0f} | TN: {tn:,.0f} || "
+                    f"Marge: {marge_nette:.1f}% | ROE: {roe:.1f}% | ROCE: {roce:.1f}% || "
+                    f"Levier: {levier:.2f} | Auto: {autonomie:.1f}%"
+                )
+                # ---------------------------------------------
                 save_to_history(sh, "Analyse Fi", nom_analyse, resume)
-                st.success("Sauvegardé !")
+                st.success("Sauvegardé avec tous les détails !")
                 time.sleep(1); st.rerun()
             elif not nom_analyse:
                 st.warning("Donne un nom à ton analyse !")
 
-    # 5. HISTORIQUE (NOUVEAU BLOC)
+    # SECTION HISTORIQUE
     if sh:
         st.markdown("### 📜 Historique de mes analyses")
         try:
-            # Récupération des données brutes
             raw_data = sh.worksheet("History").get_all_values()
-            if len(raw_data) > 1: # S'il y a plus que l'en-tête
-                # Création DataFrame avec les colonnes correctes
+            if len(raw_data) > 1:
                 df_hist = pd.DataFrame(raw_data[1:], columns=raw_data[0])
-                
-                # Filtrer uniquement les lignes 'Analyse Fi'
                 df_analyses = df_hist[df_hist['Action'] == 'Analyse Fi'].copy()
                 
                 if not df_analyses.empty:
-                    # On garde les colonnes utiles et on renomme pour l'affichage
+                    # On affiche les résultats complets
                     df_show = df_analyses[['Date', 'Subject', 'Value']].rename(columns={
                         'Date': 'Date', 
                         'Subject': 'Entreprise/Cas', 
-                        'Value': 'Résultats Clés'
+                        'Value': 'Détail des Ratios'
                     })
-                    # Affichage trié par date (le plus récent en haut, si possible)
+                    # On met le plus récent en premier
+                    df_show = df_show.iloc[::-1]
                     st.dataframe(df_show, use_container_width=True, hide_index=True)
                 else:
                     st.info("Aucune analyse archivée pour le moment.")
