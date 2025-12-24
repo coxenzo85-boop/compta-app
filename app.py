@@ -783,39 +783,39 @@ def financial_analysis_page(sh):
     st.markdown("### 📊 Diagnostic & Ratios Financiers")
     st.markdown("Rentre les masses de ton bilan, l'outil calcule le reste.")
 
-    # --- 1. GESTION DU CHARGEMENT DES DONNÉES ---
-    # Si on vient de cliquer sur "Charger", on récupère les valeurs, sinon on met 0
-    def get_val(key):
-        return st.session_state.get(f"load_{key}", 0.0)
+    # --- 0. FONCTION DE CALLBACK (POUR ÉVITER L'ERREUR WIDGET) ---
+    # Cette fonction s'exécute AVANT le rechargement de la page
+    def charger_analyse(data):
+        for k, v in data.items():
+            st.session_state[f"af_{k}"] = float(v)
 
-    # --- 2. ZONE DE SAISIE (GAUCHE) ---
-    # On utilise des 'key' spécifiques pour pouvoir les remplir automatiquement
+    # --- 1. ZONE DE SAISIE (GAUCHE) ---
     with st.sidebar:
         st.header("1. Compte de Résultat")
-        # On vérifie si une valeur chargée existe, sinon 0.0
-        ca = st.number_input("Chiffre d'Affaires (CA)", value=get_val('ca'), step=1000.0, key="af_ca")
-        rex = st.number_input("Résultat d'Exploitation (REX)", value=get_val('rex'), step=1000.0, key="af_rex")
-        rn = st.number_input("Résultat Net (RN)", value=get_val('rn'), step=1000.0, key="af_rn")
+        # Note: On enlève 'value=...' car on utilise le session_state via la clé
+        ca = st.number_input("Chiffre d'Affaires (CA)", step=1000.0, key="af_ca")
+        rex = st.number_input("Résultat d'Exploitation (REX)", step=1000.0, key="af_rex")
+        rn = st.number_input("Résultat Net (RN)", step=1000.0, key="af_rn")
         
         st.header("2. Bilan (Haut)")
-        cap_propres = st.number_input("Capitaux Propres (CP)", value=get_val('cp'), step=1000.0, key="af_cp")
-        dettes_fi = st.number_input("Dettes Financières (LMT)", value=get_val('dettes'), step=1000.0, key="af_dettes")
-        actif_immo = st.number_input("Actif Immobilisé Brut", value=get_val('immo'), step=1000.0, key="af_immo")
+        cap_propres = st.number_input("Capitaux Propres (CP)", step=1000.0, key="af_cp")
+        dettes_fi = st.number_input("Dettes Financières (LMT)", step=1000.0, key="af_dettes")
+        actif_immo = st.number_input("Actif Immobilisé Brut", step=1000.0, key="af_immo")
         
         st.header("3. Bilan (Bas - BFR)")
-        actif_circ = st.number_input("Actif Circulant", value=get_val('ac'), step=1000.0, key="af_ac")
-        passif_circ = st.number_input("Passif Circulant", value=get_val('pc'), step=1000.0, key="af_pc")
+        actif_circ = st.number_input("Actif Circulant", step=1000.0, key="af_ac")
+        passif_circ = st.number_input("Passif Circulant", step=1000.0, key="af_pc")
         
         st.header("4. Trésorerie")
-        treso_actif = st.number_input("Trésorerie Actif", value=get_val('ta'), step=1000.0, key="af_ta")
-        treso_passif = st.number_input("Trésorerie Passif", value=get_val('tp'), step=1000.0, key="af_tp")
+        treso_actif = st.number_input("Trésorerie Actif", step=1000.0, key="af_ta")
+        treso_passif = st.number_input("Trésorerie Passif", step=1000.0, key="af_tp")
 
-    # --- 3. CALCULS EN TEMPS RÉEL ---
+    # --- 2. CALCULS ---
     frng = (cap_propres + dettes_fi) - actif_immo
     bfr = actif_circ - passif_circ
     tn = frng - bfr
     
-    # Ratios
+    # Ratios (Calculs sécurisés contre la division par 0)
     roe = (rn / cap_propres * 100) if cap_propres > 0 else 0
     cap_engages = cap_propres + dettes_fi
     roce = (rex / cap_engages * 100) if cap_engages > 0 else 0
@@ -823,7 +823,7 @@ def financial_analysis_page(sh):
     levier = dettes_fi / cap_propres if cap_propres > 0 else 0
     autonomie = cap_propres / (cap_propres + dettes_fi + passif_circ + treso_passif) * 100 if (cap_propres + dettes_fi + passif_circ) > 0 else 0
 
-    # --- 4. AFFICHAGE DASHBOARD ---
+    # --- 3. AFFICHAGE DASHBOARD ---
     st.markdown("#### 🏗️ Équilibre Financier")
     c1, c2, c3 = st.columns(3)
     c1.metric("FRNG", f"{frng:,.0f} €", delta="Sain" if frng > 0 else "Fragile")
@@ -841,73 +841,65 @@ def financial_analysis_page(sh):
     k3.metric("Levier", f"{levier:.2f}", delta_color="inverse", delta="⚠️" if levier > 1 else "Ok")
     k4.metric("Autonomie", f"{autonomie:.0f} %")
 
-    # --- 5. SAUVEGARDE INTELLIGENTE (JSON) ---
+    # --- 4. SAUVEGARDE (JSON) ---
     st.markdown("---")
     with st.container(border=True):
         c_in, c_bt = st.columns([3, 1])
         nom = c_in.text_input("Nom de l'analyse", placeholder="Ex: Cas Danone 2024")
+        
         if c_bt.button("💾 Sauvegarder", use_container_width=True):
             if sh and nom:
-                # On crée un dictionnaire avec TOUTES les entrées
                 data_to_save = {
                     "ca": ca, "rex": rex, "rn": rn,
                     "cp": cap_propres, "dettes": dettes_fi, "immo": actif_immo,
                     "ac": actif_circ, "pc": passif_circ,
                     "ta": treso_actif, "tp": treso_passif
                 }
-                # On transforme ce dictionnaire en texte (JSON) pour le stocker
                 json_data = json.dumps(data_to_save)
                 save_to_history(sh, "AnalyseFi_Data", nom, json_data)
-                clear_cache()
-                st.success("Sauvegardé !"); time.sleep(1); st.rerun()
+                clear_cache() # Vide le cache pour voir la nouvelle sauvegarde
+                st.success("Sauvegardé !")
+                time.sleep(1)
+                st.rerun()
 
-    # --- 6. HISTORIQUE INTERACTIF (LOADER) ---
-    # --- 6. HISTORIQUE INTERACTIF (OPTIMISÉ QUOTA) ---
+    # --- 5. HISTORIQUE & CHARGEMENT (CORRIGÉ AVEC CALLBACK) ---
     if sh:
         st.markdown("### 📜 Historique & Chargement")
         try:
-            # ON UTILISE LE CACHE ICI 👇
+            # On utilise le cache ici
             df_history = get_history_cached(sh)
             
             if not df_history.empty:
-                # On inverse l'ordre pour avoir le plus récent en haut
+                # Parcours inversé pour les plus récents en haut
                 for index, row in df_history.iloc[::-1].iterrows():
-                    # Vérifions qu'on a bien une analyse (Colonne 'Action')
                     if row.get('Action') in ["Analyse Fi", "AnalyseFi_Data"]:
                         
                         label = f"📅 {row.get('Date')} - {row.get('Subject')}"
                         with st.expander(label):
-                            # TENTATIVE DE LECTURE JSON
                             try:
                                 saved_data = json.loads(row.get('Value'))
                                 
-                                # Résumé rapide
+                                # Résumé
                                 r_frng = (saved_data['cp'] + saved_data['dettes']) - saved_data['immo']
                                 r_tn = r_frng - (saved_data['ac'] - saved_data['pc'])
                                 st.caption(f"Aperçu : FRNG {r_frng:,.0f} | TN {r_tn:,.0f}")
                                 
-                                # LE BOUTON MAGIQUE (CORRIGÉ)
-                                if st.button("🔄 Charger ces données", key=f"load_{index}"):
-                                    for k, v in saved_data.items():
-                                        # ASTUCE : On met à jour directement la clé du widget (af_ca, af_rn...)
-                                        # Cela force Streamlit à afficher la nouvelle valeur
-                                        st.session_state[f"af_{k}"] = float(v)
-                                    
-                                    st.rerun()
+                                # --- LA CORRECTION EST ICI 👇 ---
+                                st.button(
+                                    "🔄 Charger ces données", 
+                                    key=f"btn_load_{index}",
+                                    on_click=charger_analyse,  # On appelle la fonction AVANT le rerun
+                                    args=(saved_data,)         # On lui passe les données
+                                )
+                                # --------------------------------
                                     
                             except (json.JSONDecodeError, TypeError):
                                 st.info("ℹ️ Ancienne sauvegarde (Texte seul)")
                                 st.text(row.get('Value'))
-                            except Exception as e:
-                                st.error(f"Erreur lecture : {e}")
-
             else: st.info("Historique vide.")
-        except Exception as e: 
-            # Si erreur quota, on affiche un message gentil au lieu de planter
-            if "Quota exceeded" in str(e):
-                st.warning("⚠️ Trop de requêtes. Attends quelques secondes...")
-            else:
-                st.warning(f"Erreur historique : {e}")
+        except Exception as e:
+            if "Quota exceeded" in str(e): st.warning("⚠️ Trop de requêtes. Attends un peu...")
+            else: st.warning(f"Erreur historique : {e}")
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
