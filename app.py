@@ -1072,7 +1072,7 @@ def financial_analysis_page(sh):
             if "Quota exceeded" in str(e): st.warning("⚠️ Trop de requêtes. Attends un peu...")
             else: st.warning(f"Erreur historique : {e}")
 
-# --- PAGE BIBLIOTHÈQUE COMPTABLE (VERSION GOOGLE SHEETS) ---
+# --- PAGE BIBLIOTHÈQUE COMPTABLE (VERSION AVANCÉE L3) ---
 def accounting_library_page(sh):
     st.markdown("### 📖 Bibliothèque d'Écritures Comptables")
     st.markdown("Base de données collaborative des schémas d'écritures.")
@@ -1085,70 +1085,63 @@ def accounting_library_page(sh):
             data = ws.get_all_records()
             df = pd.DataFrame(data)
         except:
-            # SI L'ONGLET N'EXISTE PAS, ON LE CRÉE AVEC UN PACK DE DÉMARRAGE L3 CCA
+            # SI L'ONGLET N'EXISTE PAS, ON LE CRÉE AVEC LA NOUVELLE STRUCTURE
             try:
-                ws = sh.add_worksheet(title="Bibliotheque", rows="1000", cols="4")
-                ws.append_row(["Schema", "Compte", "Libelle", "Sens"]) # En-têtes
+                ws = sh.add_worksheet(title="Bibliotheque", rows="1000", cols="6")
+                # AJOUT DES DEUX NOUVELLES COLONNES ICI 👇
+                ws.append_row(["Schema", "Compte", "Libelle", "Sens", "Journal", "Condition"]) 
                 
-                # --- PACK DE DÉMARRAGE L3 CCA ---
+                # --- PACK DE DÉMARRAGE L3 CCA (ENRICHI) ---
                 initial_data = [
-                    # Achat / Vente
-                    ["Achat Marchandises (Standard)", "607", "Achats de marchandises", "Debit"],
-                    ["Achat Marchandises (Standard)", "44566", "TVA déductible sur ABS", "Debit"],
-                    ["Achat Marchandises (Standard)", "401", "Fournisseurs", "Credit"],
-                    ["Vente Produits Finis", "411", "Clients", "Debit"],
-                    ["Vente Produits Finis", "701", "Ventes de produits finis", "Credit"],
-                    ["Vente Produits Finis", "44571", "TVA collectée", "Credit"],
+                    # Achat
+                    ["Achat Marchandises (Standard)", "607", "Achats de marchandises", "Debit", "ACHATS", "Montant HT"],
+                    ["Achat Marchandises (Standard)", "44566", "TVA déductible sur ABS", "Debit", "ACHATS", "Taux en vigueur"],
+                    ["Achat Marchandises (Standard)", "401", "Fournisseurs", "Credit", "ACHATS", "Montant TTC"],
+                    
+                    # Vente (Prestation de service)
+                    ["Prestation Service (Encaissement)", "411", "Clients", "Debit", "VENTES", "TTC"],
+                    ["Prestation Service (Encaissement)", "706", "Prestations de services", "Credit", "VENTES", "HT"],
+                    ["Prestation Service (Encaissement)", "44571", "TVA collectée", "Credit", "VENTES", "Attention: TVA exigible à l'encaissement (sauf option débits)"],
+                    
                     # Immos
-                    ["Acquisition Immo Corporelle", "21x", "Immobilisation Corporelle", "Debit"],
-                    ["Acquisition Immo Corporelle", "44562", "TVA déductible sur Immo", "Debit"],
-                    ["Acquisition Immo Corporelle", "404", "Fournisseurs d'immobilisations", "Credit"],
-                    ["Amortissement Annuel", "6811", "Dot. aux amortissements", "Debit"],
-                    ["Amortissement Annuel", "28x", "Amortissement des immo.", "Credit"],
-                    ["Cession Immo (Sortie)", "462", "Créances sur cessions d'immo", "Debit"],
-                    ["Cession Immo (Sortie)", "775", "PCEAC (Prix de cession)", "Credit"],
-                    ["Cession Immo (Sortie)", "44571", "TVA Collectée", "Credit"],
-                    ["Cession Immo (VNC)", "675", "VNC", "Debit"],
-                    ["Cession Immo (VNC)", "28x", "Amortissements cumulés", "Debit"],
-                    ["Cession Immo (VNC)", "21x", "Valeur Brute", "Credit"],
-                    # Stocks (Inventaire intermittent)
-                    ["Stock (Annulation Initial)", "603", "Variation de stocks", "Debit"],
-                    ["Stock (Annulation Initial)", "3xx", "Stock Initial", "Credit"],
-                    ["Stock (Constatation Final)", "3xx", "Stock Final", "Debit"],
-                    ["Stock (Constatation Final)", "603", "Variation de stocks", "Credit"],
-                    ["Depreciation Stock (Dotation)", "6817", "Dot. prov. dépréc. actifs circ.", "Debit"],
-                    ["Depreciation Stock (Dotation)", "39x", "Provisions dépréc. stocks", "Credit"],
+                    ["Acquisition Immo Corporelle", "21x", "Immobilisation Corporelle", "Debit", "ACHATS", "Coût d'acquisition (Prix + Frais acc.)"],
+                    ["Acquisition Immo Corporelle", "44562", "TVA déductible sur Immo", "Debit", "ACHATS", ""],
+                    ["Acquisition Immo Corporelle", "404", "Fournisseurs d'immobilisations", "Credit", "ACHATS", "Date de transfert de propriété"],
+                    
+                    # Cession (Sortie)
+                    ["Cession Immo (Sortie)", "462", "Créances sur cessions d'immo", "Debit", "OD", "Prix de Cession TTC"],
+                    ["Cession Immo (Sortie)", "775", "PCEAC (Prix de cession)", "Credit", "OD", "Prix de Cession HT"],
+                    ["Cession Immo (Sortie)", "44571", "TVA Collectée", "Credit", "OD", "Si assujetti à la TVA"],
+                    
+                    # Cession (VNC)
+                    ["Cession Immo (VNC)", "675", "VNC", "Debit", "OD", "Différence V.Brute - Amort."],
+                    ["Cession Immo (VNC)", "28x", "Amortissements cumulés", "Debit", "OD", "Au jour de la cession"],
+                    ["Cession Immo (VNC)", "21x", "Valeur Brute", "Credit", "OD", "Valeur historique"],
+                    
                     # Paie
-                    ["Paie (Salaire Brut)", "641", "Rémunération du personnel", "Debit"],
-                    ["Paie (Salaire Brut)", "421", "Personnel - Rémunérations dues", "Credit"],
-                    ["Paie (Salaire Brut)", "431", "Sécurité Sociale", "Credit"],
-                    ["Paie (Charges Patronales)", "645", "Charges sécu. et prévoyance", "Debit"],
-                    ["Paie (Charges Patronales)", "431", "Sécurité Sociale", "Credit"],
+                    ["Paie (Salaire Brut)", "641", "Rémunération du personnel", "Debit", "OD", "Salaire Brut"],
+                    ["Paie (Salaire Brut)", "421", "Personnel - Rémunérations dues", "Credit", "OD", "Salaire Net à payer"],
+                    ["Paie (Salaire Brut)", "431", "Sécurité Sociale", "Credit", "OD", "Cotisations Salariales"],
+                    
                     # Emprunt
-                    ["Emprunt (Remboursement)", "164", "Emprunt", "Debit"],
-                    ["Emprunt (Remboursement)", "661", "Intérêts des emprunts", "Debit"],
-                    ["Emprunt (Remboursement)", "512", "Banque", "Credit"],
-                    # Titres
-                    ["VMP (Acquisition)", "503", "VMP (Actions)", "Debit"],
-                    ["VMP (Acquisition)", "512", "Banque", "Credit"],
-                    ["VMP (Cession avec Gain)", "512", "Banque", "Debit"],
-                    ["VMP (Cession avec Gain)", "503", "VMP (Actions)", "Credit"],
-                    ["VMP (Cession avec Gain)", "767", "Produits nets sur cessions VMP", "Credit"]
+                    ["Emprunt (Remboursement)", "164", "Emprunt", "Debit", "BANQUE", "Capital amorti"],
+                    ["Emprunt (Remboursement)", "661", "Intérêts des emprunts", "Debit", "BANQUE", "Intérêts de la période"],
+                    ["Emprunt (Remboursement)", "512", "Banque", "Credit", "BANQUE", "Annuité (Total)"]
                 ]
                 
                 for row in initial_data:
                     ws.append_row(row)
                 
-                # Rechargement des données
                 data = ws.get_all_records()
                 df = pd.DataFrame(data)
-                st.success("📚 Base de données comptable initialisée avec succès !"); time.sleep(1); st.rerun()
+                st.success("📚 Base de données L3 initialisée !"); time.sleep(1); st.rerun()
             except Exception as e: st.error(f"Erreur init : {e}")
 
     # 2. INTERFACE DE RECHERCHE
     if not df.empty:
-        # On récupère la liste unique des schémas
-        schemas = sorted(list(set(df["Schema"].astype(str))))
+        # On force les colonnes en string pour éviter les erreurs de tri
+        df = df.astype(str)
+        schemas = sorted(list(set(df["Schema"])))
         
         c_search, c_add = st.columns([3, 1])
         with c_search:
@@ -1156,49 +1149,69 @@ def accounting_library_page(sh):
 
         # 3. AFFICHAGE DU SCHÉMA
         if search:
-            st.markdown(f"#### ✍️ Schéma : {search}")
-            # On filtre les lignes correspondant au schéma choisi
+            # On récupère les lignes
             lines = df[df["Schema"] == search]
             
-            # Affichage style "Journal"
-            st.markdown("""
-            <div style="background-color:white; padding:15px; border-radius:10px; border:1px solid #e5e7eb;">
-            """, unsafe_allow_html=True)
+            # --- INFO CONTEXTUELLE (Journal & Condition) ---
+            # On prend les infos de la première ligne (elles sont identiques pour tout le schéma)
+            journal_type = lines.iloc[0]['Journal']
+            condition_globale = lines.iloc[0]['Condition']
+            
+            # Badge Journal
+            st.markdown(f"#### ✍️ Schéma : {search} <span style='background-color:{TEAL}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle;'>Journal : {journal_type}</span>", unsafe_allow_html=True)
+            
+            # Tableau
+            st.markdown("""<div style="background-color:white; padding:15px; border-radius:10px; border:1px solid #e5e7eb;">""", unsafe_allow_html=True)
             
             for index, row in lines.iterrows():
                 c1, c2, c3 = st.columns([1, 4, 1])
                 sens = row['Sens']
-                compte = str(row['Compte'])
-                libelle = row['Libelle']
                 
                 if sens == "Debit":
-                    c1.markdown(f"**{compte}**")
-                    c2.markdown(f"{libelle}")
+                    c1.markdown(f"**{row['Compte']}**")
+                    c2.markdown(f"{row['Libelle']}")
                     c3.markdown("🟢 Débit")
                 else:
-                    c1.markdown(f"<div style='text-align:right'>**{compte}**</div>", unsafe_allow_html=True)
-                    c2.markdown(f"<div style='text-align:right'>{libelle}</div>", unsafe_allow_html=True)
+                    c1.markdown(f"<div style='text-align:right'>**{row['Compte']}**</div>", unsafe_allow_html=True)
+                    c2.markdown(f"<div style='text-align:right'>{row['Libelle']}</div>", unsafe_allow_html=True)
                     c3.markdown("🔴 Crédit")
+                
+                # S'il y a une condition spécifique à la ligne, on l'affiche en petit
+                if row['Condition'] and row['Condition'] != condition_globale:
+                     st.caption(f"└─ 💡 *{row['Condition']}*")
+                     
                 st.markdown("<hr style='margin:5px 0; border-top: 1px dashed #eee;'>", unsafe_allow_html=True)
             
             st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Affichage de la condition majeure en bas si elle existe
+            if condition_globale and len(condition_globale) > 3:
+                st.info(f"💡 **Note technique :** {condition_globale}")
 
-    # 4. FORMULAIRE D'AJOUT (POUR COMPLÉTER LA BASE)
+    # 4. FORMULAIRE D'AJOUT (MISE À JOUR)
     st.write("")
     with st.expander("➕ Le schéma n'existe pas ? Ajoute-le !"):
-        st.info("Ajoute les lignes une par une pour un même schéma.")
+        st.info("Ajoute les lignes une par une.")
         with st.form("add_ecriture"):
-            f_nom = st.text_input("Nom du Schéma (Ex: Crédit-Bail Redevance)", value=search if search else "")
+            # Ligne 1 : Contexte
+            c_nom, c_journ = st.columns([3, 1])
+            f_nom = c_nom.text_input("Nom du Schéma", value=search if search else "")
+            f_journ = c_journ.selectbox("Type Journal", ["ACHATS", "VENTES", "OD", "BANQUE", "CAISSE", "ANOUVEAUX"])
+            
+            # Ligne 2 : Détails comptables
             c_f1, c_f2, c_f3 = st.columns([1, 2, 1])
-            f_cpt = c_f1.text_input("Compte (Ex: 612)")
+            f_cpt = c_f1.text_input("Compte (Ex: 44571)")
             f_lib = c_f2.text_input("Libellé")
             f_sens = c_f3.selectbox("Sens", ["Debit", "Credit"])
             
+            # Ligne 3 : Condition / Astuce
+            f_cond = st.text_input("Condition / Formule (Ex: TVA s/ encaissement, HT, TTC...)")
+            
             if st.form_submit_button("Ajouter cette ligne"):
                 if sh and f_nom and f_cpt:
-                    sh.worksheet("Bibliotheque").append_row([f_nom, f_cpt, f_lib, f_sens])
-                    st.success("Ligne ajoutée ! Continue pour les autres lignes ou rafraîchis.")
-                    time.sleep(1); st.rerun()
+                    # AJOUT AVEC LES 6 COLONNES
+                    sh.worksheet("Bibliotheque").append_row([f_nom, f_cpt, f_lib, f_sens, f_journ, f_cond])
+                    st.success("Ligne ajoutée !"); time.sleep(1); st.rerun()
 # --- MAIN ---
 if __name__ == "__main__":
     sh, drive = get_google_services()
