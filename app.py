@@ -842,32 +842,39 @@ def financial_analysis_page(sh):
                 st.success("Sauvegardé !"); time.sleep(1); st.rerun()
 
     # --- 6. HISTORIQUE INTERACTIF (LOADER) ---
+    # --- 6. HISTORIQUE INTERACTIF (CORRIGÉ & ROBUSTE) ---
     if sh:
         st.markdown("### 📜 Historique & Chargement")
         try:
             raw = sh.worksheet("History").get_all_values()
             if len(raw) > 1:
-                # On parcourt à l'envers pour avoir le plus récent en haut
+                # On parcourt à l'envers
                 for row in reversed(raw[1:]):
-                    # row = [Date, Action, Subject, Value]
-                    if row[1] == "AnalyseFi_Data": # On ne prend que les nouvelles sauvegardes compatibles
+                    # Vérifions qu'on a bien une analyse
+                    if len(row) > 3 and (row[1] == "Analyse Fi" or row[1] == "AnalyseFi_Data"):
+                        
                         with st.expander(f"📅 {row[0]} - {row[2]}"):
+                            # TENTATIVE DE LECTURE JSON (Nouveau format)
                             try:
-                                # On décode les données
                                 saved_data = json.loads(row[3])
                                 
-                                # On affiche un petit résumé rapide
+                                # Si ça marche, on affiche le bouton magique
                                 r_frng = (saved_data['cp'] + saved_data['dettes']) - saved_data['immo']
                                 r_tn = r_frng - (saved_data['ac'] - saved_data['pc'])
                                 st.caption(f"Aperçu : FRNG {r_frng:,.0f} | TN {r_tn:,.0f}")
                                 
-                                # LE BOUTON MAGIQUE
-                                if st.button("🔄 Charger ces données", key=f"load_{row[0]}_{row[2]}"):
-                                    # On injecte les données dans le Session State avec le préfixe "load_"
+                                if st.button("🔄 Charger ces données", key=f"load_{row[0]}_{uuid.uuid4()}"):
                                     for k, v in saved_data.items():
                                         st.session_state[f"load_{k}"] = float(v)
                                     st.rerun()
-                            except: st.error("Données corrompues")
+                                    
+                            # SI CE N'EST PAS DU JSON (Ancien format texte)
+                            except json.JSONDecodeError:
+                                st.info("ℹ️ Ancienne sauvegarde (Texte seul)")
+                                st.text(row[3]) # On affiche juste le texte
+                            except Exception as e:
+                                st.error(f"Erreur de lecture : {e}")
+
             else: st.info("Historique vide.")
         except Exception as e: st.warning(f"Erreur historique : {e}")
 # --- MAIN ---
