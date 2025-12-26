@@ -771,64 +771,93 @@ def courses_grid_page():
                 st.session_state.selected_subject = subject; st.rerun()
 
 # --- PAGE 3: DÉTAIL MATIÈRE (AVEC NOTEBOOKLM PERSONNALISÉ) ---
+# --- PAGE 3: DÉTAIL MATIÈRE (COMPATIBLE MULTI-MACS) ---
 def subject_detail_page(sh, drive, subject):
-    if st.button("← Retour"): st.session_state.selected_subject = None; st.rerun()
-    st.title(subject)
-    tab1, tab2 = st.tabs(["📂 Fichiers & IA", "✅ Tâches"])
+    # --- 1. DÉTECTION AUTOMATIQUE DU CHEMIN ICLOUD ---
+    # os.path.expanduser("~") trouve tout seul "/Users/TonNom" sur l'ordi actuel
+    user_home = os.path.expanduser("~")
+    
+    # Chemin standard d'iCloud Drive sur macOS
+    icloud_path = os.path.join(user_home, "Library", "Mobile Documents", "com~apple~CloudDocs")
+    
+    # Chemin de TON dossier L3 (qui se synchronise entre tes Macs)
+    # ⚠️ Assure-toi que ce dossier s'appelle exactement pareil sur les deux ordis
+    base_folder_name = "L3_CCA_Files" 
+    subject_path = os.path.join(icloud_path, base_folder_name, subject)
+
+    # Header de la page
+    c_back, c_title = st.columns([1, 5])
+    if c_back.button("← Retour"): 
+        st.session_state.selected_subject = None; st.rerun()
+    c_title.title(f"📂 {subject}")
+
+    tab1, tab2 = st.tabs(["💻 Mes Fichiers (Local)", "✅ Tâches"])
     
     with tab1:
         # --- BLOC NOTEBOOK LM ---
         with st.container(border=True):
-            c_logo, c_txt, c_btn = st.columns([0.5, 3, 1.5])
-            with c_logo: st.markdown("## 🧠")
-            with c_txt:
-                st.markdown(f"**Booster de révision NotebookLM**")
-                st.caption(f"Accède au carnet de notes dédié pour *{subject}*.")
-            with c_btn:
-                notebook_url = NOTEBOOK_LINKS.get(subject, "https://notebooklm.google.com/")
-                st.link_button("↗ Ouvrir NotebookLM", notebook_url, type="primary", use_container_width=True)
+            st.markdown(f"**🧠 NotebookLM** : [Ouvrir l'IA pour {subject}]({NOTEBOOK_LINKS.get(subject, '#')})")
         st.write("")
 
-        # --- GESTION DRIVE (MODE LECTURE SEULE) ---
-        if drive:
-            # On récupère l'ID du dossier
-            fid = get_or_create_subject_folder(drive, subject)
-            
-            if fid:
-                # Lien direct pour uploader manuellement
-                folder_url = f"https://drive.google.com/drive/folders/{fid}"
-                st.info("💡 Pour ajouter des cours, dépose-les directement dans le dossier Drive ci-dessous.")
-                st.markdown(f"""
-                <a href="{folder_url}" target="_blank" style="text-decoration:none;">
-                    <div style="background-color:#E8F0FE; color:#1967D2; padding:10px; border-radius:8px; text-align:center; font-weight:bold; border:1px solid #D2E3FC; margin-bottom:20px;">
-                        📂 Ouvrir le dossier "{subject}" sur Google Drive
-                    </div>
-                </a>
-                """, unsafe_allow_html=True)
+        # --- GESTION FICHIERS LOCAUX ---
+        # 1. Création automatique si le dossier n'existe pas
+        if not os.path.exists(subject_path):
+            try:
+                # On vérifie d'abord si le dossier racine L3_CCA_Files existe
+                root_path = os.path.join(icloud_path, base_folder_name)
+                if not os.path.exists(root_path):
+                    os.makedirs(root_path)
+                
+                # Puis on crée le dossier de la matière
+                os.makedirs(subject_path)
+                st.success(f"Dossier '{subject}' créé sur ce Mac !")
+            except OSError:
+                st.warning("⚠️ Impossible d'accéder à iCloud. Vérifie que la synchro est active.")
 
-                # Affichage des fichiers existants
-                st.markdown("### 📄 Mes documents disponibles")
-                files = list_drive_files(drive, fid)
-                if files:
-                    for f in files:
-                        icon_url = f.get('iconLink', 'https://ssl.gstatic.com/docs/doclist/images/icon_10_generic_list.png')
-                        st.markdown(f"""
-                        <div class="file-card">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <img src='{icon_url}' width='20'>
-                                <span style='font-weight:bold; color:{NAVY}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;'>{f['name']}</span>
-                            </div>
-                            <a href='{f['webViewLink']}' target='_blank' style='text-decoration:none; color:{TEAL}; font-size:12px; font-weight:bold; border:1px solid {TEAL}; padding:4px 8px; border-radius:4px;'>Ouvrir</a>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.warning("Aucun fichier détecté. Ajoute-les via le lien ci-dessus !")
+        # 2. Bouton Finder
+        if st.button(f"📂 Ouvrir le dossier {subject} (Finder)"):
+            if platform.system() == "Darwin": # Mac
+                subprocess.call(["open", subject_path])
+        
+        st.caption(f"📍 Chemin détecté : `{subject_path}`") # Utile pour vérifier
+        st.markdown("---")
+
+        # 3. Lister les fichiers
+        if os.path.exists(subject_path):
+            # On ignore les fichiers cachés (qui commencent par .)
+            files = [f for f in os.listdir(subject_path) if not f.startswith('.')]
+            
+            if files:
+                # Tri alphabétique pour que ce soit propre
+                files.sort()
+                
+                for file_name in files:
+                    full_path = os.path.join(subject_path, file_name)
+                    
+                    # Icônes dynamiques
+                    icon = "📄"
+                    if file_name.endswith(('.docx', '.doc')): icon = "🟦 W"
+                    elif file_name.endswith(('.xlsx', '.xls', '.csv')): icon = "🟩 X"
+                    elif file_name.endswith('.pdf'): icon = "🟥 PDF"
+                    elif file_name.endswith('.pptx'): icon = "🟧 P"
+
+                    with st.container(border=True):
+                        c_icon, c_name, c_btn = st.columns([1, 6, 2])
+                        c_icon.markdown(f"**{icon}**")
+                        c_name.text(file_name)
+                        
+                        # LE BOUTON D'OUVERTURE
+                        if c_btn.button("Ouvrir", key=f"open_{file_name}"):
+                            if platform.system() == "Darwin":
+                                subprocess.call(["open", full_path])
+                            st.toast(f"Ouverture de {file_name}...")
             else:
-                st.error("Impossible de trouver le dossier sur le Drive.")
+                st.info("Dossier vide sur ce Mac. Ajoute tes fichiers ou attends la synchro iCloud.")
         else:
-            st.warning("Connexion Drive inactive.")
+            st.error("Dossier introuvable.")
 
     with tab2:
+        # Code des tâches inchangé
         if sh:
             t, d = st.columns([3, 1]); nt = t.text_input("Tâche"); nd = d.date_input("Date")
             if st.button("Ajouter"): sh.worksheet("Tasks").append_row([str(uuid.uuid4())[:8], subject, nt, "À faire", str(nd)]); st.rerun()
